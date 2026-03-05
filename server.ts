@@ -841,11 +841,19 @@ async function startServer() {
         countryCode = "MY";
       }
 
-      // Fetch from API
+      // Fetch from API with timeout
       let holidays = [];
       try {
         console.log(`Fetching holidays for ${year} (${countryCode}) from API...`);
-        const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/${countryCode}`);
+        
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+        
+        const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/${countryCode}`, {
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeout);
         
         if (!response.ok) {
           throw new Error(`API returned ${response.status}`);

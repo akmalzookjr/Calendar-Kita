@@ -265,61 +265,61 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
       const res = await fetch(`/api/holidays/sync/${year}`, { credentials: "include" });
       const data = await res.json();
       
-      if (res.ok) {
-        if (data.count > 0) {
-          alert(`Successfully synced ${data.count} holidays!`);
-        } else {
-          // Fallback to Gemini if API returns 0 holidays or error
-          const countryCode = settings.holidayCountryCode || "MY";
-          console.log(`API returned 0 holidays for ${countryCode}. Falling back to Gemini...`);
-          
-          const apiKey = process.env.GEMINI_API_KEY;
-          if (!apiKey) {
-            alert("Holiday API failed and Gemini API key is missing. Please set GEMINI_API_KEY in your environment.");
-            return;
+      // Trigger AI fallback if API fails OR returns 0 holidays
+      if (!res.ok || data.count === 0) {
+        const countryCode = settings.holidayCountryCode || "MY";
+        console.log(`Holiday API ${res.ok ? 'returned 0 holidays' : 'failed with status ' + res.status}. Falling back to Gemini...`);
+        
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) {
+          if (!res.ok) {
+            alert(`Holiday API failed (${res.status}) and Gemini API key is missing. Please set GEMINI_API_KEY in your environment.`);
+          } else {
+            alert("No holidays found and Gemini API key is missing. Please set GEMINI_API_KEY for AI fallback.");
           }
+          return;
+        }
 
-          const ai = new GoogleGenAI({ apiKey });
-          const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
-            contents: `Generate a list of public holidays for ${countryCode} in the year ${year}. Return the data in JSON format as an array of objects with 'date' (YYYY-MM-DD), 'localName' (string), and 'name' (string).`,
-            config: {
-              responseMimeType: "application/json",
-              responseSchema: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    date: { type: Type.STRING },
-                    localName: { type: Type.STRING },
-                    name: { type: Type.STRING },
-                  },
-                  required: ["date", "localName", "name"]
-                }
+        const ai = new GoogleGenAI({ apiKey });
+        const response = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: `Generate a list of public holidays for ${countryCode} in the year ${year}. Return the data in JSON format as an array of objects with 'date' (YYYY-MM-DD), 'localName' (string), and 'name' (string).`,
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  date: { type: Type.STRING },
+                  localName: { type: Type.STRING },
+                  name: { type: Type.STRING },
+                },
+                required: ["date", "localName", "name"]
               }
             }
-          });
-
-          const holidays = JSON.parse(response.text || "[]");
-          if (holidays && holidays.length > 0) {
-            const importRes = await fetch("/api/holidays/import", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ holidays, year }),
-              credentials: "include"
-            });
-            const importData = await importRes.json();
-            if (importRes.ok) {
-              alert(`Successfully generated and synced ${importData.count} holidays using AI fallback!`);
-            } else {
-              alert(`AI Sync failed: ${importData.error || "Unknown error"}`);
-            }
-          } else {
-            alert("AI failed to generate holidays.");
           }
+        });
+
+        const holidays = JSON.parse(response.text || "[]");
+        if (holidays && holidays.length > 0) {
+          const importRes = await fetch("/api/holidays/import", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ holidays, year }),
+            credentials: "include"
+          });
+          const importData = await importRes.json();
+          if (importRes.ok) {
+            alert(`Successfully generated and synced ${importData.count} holidays using AI fallback!`);
+          } else {
+            alert(`AI Sync failed: ${importData.error || "Unknown error"}`);
+          }
+        } else {
+          alert("AI failed to generate holidays.");
         }
       } else {
-        alert(`Sync failed: ${data.error || "Unknown error"}`);
+        alert(`Successfully synced ${data.count} holidays!`);
       }
     } catch (e) {
       console.error("Sync failed", e);
@@ -1705,60 +1705,56 @@ export default function App() {
         const res = await fetch(`/api/holidays/sync/${year}`, { credentials: "include" });
         const data = await res.json();
         
-        if (res.ok) {
-          if (data.count > 0) {
-            fetchEvents();
-          } else if (user.isAdmin) {
-            // Fallback to Gemini if API returns 0 holidays and user is admin
-            // We fetch settings first to get the country code
-            const settingsRes = await fetch("/api/settings", { credentials: "include" });
-            const settings = await settingsRes.json();
-            const countryCode = settings.holidayCountryCode || "MY";
-            
-            const apiKey = process.env.GEMINI_API_KEY;
-            if (!apiKey) {
-              console.warn("Gemini API key is missing for holiday fallback.");
-              return;
-            }
+        // Trigger AI fallback if API fails OR returns 0 holidays
+        if ((!res.ok || data.count === 0) && user.isAdmin) {
+          // We fetch settings first to get the country code
+          const settingsRes = await fetch("/api/settings", { credentials: "include" });
+          const settings = await settingsRes.json();
+          const countryCode = settings.holidayCountryCode || "MY";
+          
+          const apiKey = process.env.GEMINI_API_KEY;
+          if (!apiKey) {
+            console.warn("Gemini API key is missing for holiday fallback.");
+            return;
+          }
 
-            console.log(`API returned 0 holidays for ${countryCode}. Falling back to Gemini...`);
-            
-            const ai = new GoogleGenAI({ apiKey });
-            const response = await ai.models.generateContent({
-              model: "gemini-3-flash-preview",
-              contents: `Generate a list of public holidays for ${countryCode} in the year ${year}. Return the data in JSON format as an array of objects with 'date' (YYYY-MM-DD), 'localName' (string), and 'name' (string).`,
-              config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      date: { type: Type.STRING },
-                      localName: { type: Type.STRING },
-                      name: { type: Type.STRING },
-                    },
-                    required: ["date", "localName", "name"]
-                  }
+          console.log(`Holiday API ${res.ok ? 'returned 0 holidays' : 'failed'}. Falling back to Gemini...`);
+          
+          const ai = new GoogleGenAI({ apiKey });
+          const response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: `Generate a list of public holidays for ${countryCode} in the year ${year}. Return the data in JSON format as an array of objects with 'date' (YYYY-MM-DD), 'localName' (string), and 'name' (string).`,
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    date: { type: Type.STRING },
+                    localName: { type: Type.STRING },
+                    name: { type: Type.STRING },
+                  },
+                  required: ["date", "localName", "name"]
                 }
               }
-            });
-
-            const holidays = JSON.parse(response.text || "[]");
-            if (holidays && holidays.length > 0) {
-              const importRes = await fetch("/api/holidays/import", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ holidays, year }),
-                credentials: "include"
-              });
-              if (importRes.ok) {
-                fetchEvents();
-              }
             }
-          } else {
-            fetchEvents();
+          });
+
+          const holidays = JSON.parse(response.text || "[]");
+          if (holidays && holidays.length > 0) {
+            const importRes = await fetch("/api/holidays/import", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ holidays, year }),
+              credentials: "include"
+            });
+            if (importRes.ok) {
+              fetchEvents();
+            }
           }
+        } else if (res.ok && data.count > 0) {
+          fetchEvents();
         }
       } catch (e) {
         console.error("Failed to sync holidays", e);
