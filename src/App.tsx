@@ -258,7 +258,7 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
     }
   };
 
-  const handleSyncHolidays = async () => {
+    const handleSyncHolidays = async () => {
     setIsSyncingHolidays(true);
     try {
       const year = new Date().getFullYear();
@@ -267,68 +267,16 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
       const res = await fetch(`/api/holidays/sync/${year}`, { credentials: "include" });
       const data = await res.json();
       
-      if (res.ok && data.count > 0) {
-        alert(`Successfully synced ${data.count} holidays!`);
-        return;
-      }
-
-      // If backend failed or returned 0, try AI Fallback from Frontend
-      console.log("Primary API failed or returned 0. Attempting AI fallback from frontend...");
-      
-      const apiKey = (process.env.GEMINI_API_KEY as string);
-      if (!apiKey) {
-        alert("Gemini API key is missing. Please set GEMINI_API_KEY in your environment.");
-        return;
-      }
-
-      try {
-        const ai = new GoogleGenAI({ apiKey });
-        const aiResponse = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents: `Generate a list of public holidays for ${countryCode} in the year ${year}. Return the data in JSON format as an array of objects with 'date' (YYYY-MM-DD), 'localName' (string), and 'name' (string).`,
-          config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  date: { type: Type.STRING },
-                  localName: { type: Type.STRING },
-                  name: { type: Type.STRING },
-                },
-                required: ["date", "localName", "name"]
-              }
-            }
-          }
-        });
-
-        const holidays = JSON.parse(aiResponse.text || "[]");
-        if (Array.isArray(holidays) && holidays.length > 0) {
-          // Import the generated holidays back to the server
-          const importRes = await fetch("/api/holidays/import", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ holidays, year }),
-            credentials: "include"
-          });
-          
-          if (importRes.ok) {
-            const importData = await importRes.json();
-            alert(`Successfully generated and synced ${importData.count} holidays using AI!`);
-          } else {
-            alert("AI generated holidays but failed to save them to the server.");
-          }
+      if (res.ok) {
+        if (data.count > 0) {
+          alert(`Successfully synced ${data.count} holidays from Calendarific!`);
         } else {
-          alert("AI failed to generate any holidays.");
+          alert(`No holidays found for ${year} from Calendarific. ${data.message || ''}`);
         }
-      } catch (aiError: any) {
-        console.error("Frontend AI Fallback failed:", aiError);
-        if (aiError.message?.includes("API key not valid") || JSON.stringify(aiError).includes("API_KEY_INVALID")) {
-          alert("The Gemini API key is invalid. Please ensure you have a valid key from Google AI Studio.");
-        } else {
-          alert("Failed to generate holidays using AI fallback.");
-        }
+        // Refresh events to show holidays
+        window.location.reload();
+      } else {
+        alert("Failed to sync holidays: " + (data.message || "Unknown error"));
       }
     } catch (e) {
       console.error("Sync failed", e);
