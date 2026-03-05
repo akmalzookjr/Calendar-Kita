@@ -40,6 +40,7 @@ async function debugSupabase(operation: string, supabasePromise: Promise<any>) {
     return { success: false, error };
   }
 }
+
 // --- CLOUD CONFIG ---
 const SUPABASE_URL = 'https://vshmnnxcskpejlnnbveu.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZzaG1ubnhjc2twZWpsbm5idmV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2OTgzNzUsImV4cCI6MjA4ODI3NDM3NX0.hjfEaRV7F7EFmA-1OWVllra6Y3E6mLa5MSI0aWkX5z0';
@@ -55,7 +56,7 @@ if (!fs.existsSync(profileImagesDir)) {
   fs.mkdirSync(profileImagesDir, { recursive: true });
 }
 
-// Initialize SQLite database (keeping for local data)
+// Initialize SQLite database (local backup)
 const db = new Database("family_calendar.db");
 
 // Initialize database tables
@@ -449,38 +450,49 @@ async function startServer() {
   };
   seedAdmin();
 
-app.post("/api/auth/register", async (req, res) => {
-  const { username, password } = req.body;
-  try {
-    const id = crypto.randomUUID();
-    const hashedPassword = await bcrypt.hash(password, 10);
-    
-    // Local DB
-    db.prepare("INSERT INTO users (id, username, password) VALUES (?, ?, ?)").run(id, username, hashedPassword);
-    console.log(`✅ Local user created: ${username} (${id})`);
-    
-    // Supabase backup with better error logging
+  // --- AUTH ROUTES ---
+  app.post("/api/auth/register", async (req, res) => {
+    const { username, password } = req.body;
     try {
-      const { data, error } = await supabase.from('users').insert([{ 
-        id, 
-        username, 
-        password: hashedPassword, 
-        isAdmin: false 
-      }]);
+      const id = crypto.randomUUID();
+      const hashedPassword = await bcrypt.hash(password, 10);
       
-      if (error) {
-        console.error("❌ Supabase registration error details:", {
-          code: error.code,
-          message: error.message,
-          details: error.details,
-          hint: error.hint
-        });
-      } else {
-        console.log(`✅ Supabase user created: ${username}`);
+      // Local DB
+      db.prepare("INSERT INTO users (id, username, password) VALUES (?, ?, ?)").run(id, username, hashedPassword);
+      console.log(`✅ Local user created: ${username} (${id})`);
+      
+      // Supabase backup
+      try {
+        const { data, error } = await supabase.from('users').insert([{ 
+          id, 
+          username, 
+          password: hashedPassword, 
+          isAdmin: false 
+        }]);
+        
+        if (error) {
+          console.error("❌ Supabase registration error:", {
+            code: error.code,
+            message: error.message,
+            details: error.details,
+            hint: error.hint
+          });
+        } else {
+          console.log(`✅ Supabase user created: ${username}`);
+        }
+      } catch (supabaseError) {
+        console.error("❌ Supabase registration exception:", supabaseError);
       }
-    } catch (supabaseError) {
-      console.error("❌ Supabase registration exception:", supabaseError);
-    }
+
+      broadcast({
+        type: "USER_REGISTERED",
+        payload: {
+          id,
+          username,
+          isAdmin: false,
+          groups: []
+        }
+      });
 
       res.status(201).json({ message: "User registered" });
     } catch (error: any) {
@@ -495,8 +507,9 @@ app.post("/api/auth/register", async (req, res) => {
   app.post("/api/auth/login", async (req, res) => {
     const { username, password } = req.body;
     try {
-      // Local DB login
+      // Try local DB first
       const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as any;
+      
       if (!user || !(await bcrypt.compare(password, user.password))) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
@@ -859,81 +872,102 @@ app.post("/api/auth/register", async (req, res) => {
     }
   });
 
-// --- HOLIDAY ROUTES ---
-app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
-  const { year } = req.params;
-  
-  try {
-    // First, delete existing holidays
-    const startDate = `${year}-01-01`;
-    const endDate = `${year}-12-31`;
+  // --- HOLIDAY ROUTES ---
+  app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
+    const { year } = req.params;
     
-    db.prepare(`
-      DELETE FROM events 
-      WHERE systemGenerated = 1 
-      AND type = 'public_holiday'
-      AND date >= ? AND date <= ?
-    `).run(startDate, endDate);
-
-    // Try Nager.Date API (this one definitely works for 2026)
-    const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/MY`);
-    
-    if (!response.ok) {
-      throw new Error(`API returned ${response.status}`);
-    }
-    
-    const holidays = await response.json();
-    
-    if (!holidays || holidays.length === 0) {
-      return res.json({ message: "No holidays found", count: 0 });
-    }
-
-    console.log(`Found ${holidays.length} holidays from Nager.Date API`);
-
-    // Insert holidays into database
-    const insertHoliday = db.prepare(`
-      INSERT INTO events 
-      (id, title, description, date, endDate, userId, userName, isShared, type, systemGenerated, readOnly) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    let insertedCount = 0;
-    
-    holidays.forEach((holiday: any) => {
-      const safeName = holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().substring(0, 50);
-      const id = `holiday-${holiday.date}-${safeName}`;
+    try {
+      // First, delete existing holidays from local DB
+      const startDate = `${year}-01-01`;
+      const endDate = `${year}-12-31`;
       
-      try {
-        insertHoliday.run(
-          id,
-          holiday.localName,
-          holiday.name || holiday.localName,
-          holiday.date,
-          holiday.date,
-          'system',
-          'System',
-          1,
-          'public_holiday',
-          1,
-          1
-        );
-        insertedCount++;
-      } catch (err) {
-        // Ignore duplicates
-      }
-    });
+      db.prepare(`
+        DELETE FROM events 
+        WHERE systemGenerated = 1 
+        AND type = 'public_holiday'
+        AND date >= ? AND date <= ?
+      `).run(startDate, endDate);
 
-    res.json({ 
-      message: `Synced ${insertedCount} holidays`, 
-      count: insertedCount,
-      source: "Nager.Date API"
-    });
-    
-  } catch (error) {
-    console.error("Holiday sync error:", error);
-    res.json({ message: "Could not fetch holidays", count: 0 });
-  }
-});
+      // Try Nager.Date API
+      const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/MY`);
+      
+      if (!response.ok) {
+        throw new Error(`API returned ${response.status}`);
+      }
+      
+      const holidays = await response.json();
+      
+      if (!holidays || holidays.length === 0) {
+        return res.json({ message: "No holidays found", count: 0 });
+      }
+
+      console.log(`Found ${holidays.length} holidays from Nager.Date API`);
+
+      // Insert holidays into local database
+      const insertHoliday = db.prepare(`
+        INSERT INTO events 
+        (id, title, description, date, endDate, userId, userName, isShared, type, systemGenerated, readOnly) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      let insertedCount = 0;
+      
+      holidays.forEach((holiday: any) => {
+        const safeName = holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().substring(0, 50);
+        const id = `holiday-${holiday.date}-${safeName}`;
+        
+        try {
+          insertHoliday.run(
+            id,
+            holiday.localName,
+            holiday.name || holiday.localName,
+            holiday.date,
+            holiday.date,
+            'system',
+            'System',
+            1,
+            'public_holiday',
+            1,
+            1
+          );
+          insertedCount++;
+        } catch (err) {
+          // Ignore duplicates
+        }
+      });
+
+      // Also sync to Supabase
+      try {
+        const holidayInserts = holidays.map((holiday: any) => ({
+          id: `holiday-${holiday.date}-${holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().substring(0, 50)}`,
+          title: holiday.localName,
+          description: holiday.name || holiday.localName,
+          date: holiday.date,
+          endDate: holiday.date,
+          userId: 'system',
+          userName: 'System',
+          isShared: true,
+          type: 'public_holiday',
+          systemGenerated: true,
+          readOnly: true
+        }));
+        await supabase.from('events').upsert(holidayInserts);
+        console.log(`✅ Synced ${holidayInserts.length} holidays to Supabase`);
+      } catch (supabaseError) {
+        console.error("Failed to sync holidays to Supabase:", supabaseError);
+      }
+
+      res.json({ 
+        message: `Synced ${insertedCount} holidays`, 
+        count: insertedCount,
+        source: "Nager.Date API"
+      });
+      
+    } catch (error) {
+      console.error("Holiday sync error:", error);
+      res.json({ message: "Could not fetch holidays", count: 0 });
+    }
+  });
 
   // --- EVENT ROUTES ---
   app.get("/api/events", authenticate, (req: any, res) => {
@@ -982,186 +1016,149 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
     }
   });
 
-app.post("/api/events", authenticate, async (req: any, res) => {
-  const { id, title, description, date, endDate, startTime, endTime, groupIds } = req.body;
-  const userId = req.user.id;
-  const userName = req.user.username;
-  
-  console.log(`📝 Creating event "${title}" for user ${userName} (${userId})`);
-  console.log(`📦 Event data:`, { id, title, date, endDate, startTime, endTime, groupIds });
-  
-  try {
-    if (groupIds && Array.isArray(groupIds)) {
-      for (const gId of groupIds) {
-        const isMember = db.prepare("SELECT 1 FROM user_groups WHERE userId = ? AND groupId = ?").get(userId, gId);
-        if (!isMember) {
-          console.warn(`⚠️ User ${userName} not a member of group ${gId}`);
-          return res.status(403).json({ error: `You are not a member of group ${gId}` });
-        }
-      }
-    }
-
-    const insertEvent = db.prepare(`
-      INSERT INTO events (id, title, description, date, endDate, startTime, endTime, userId, userName, isShared)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+  app.post("/api/events", authenticate, async (req: any, res) => {
+    const { id, title, description, date, endDate, startTime, endTime, groupIds } = req.body;
+    const userId = req.user.id;
+    const userName = req.user.username;
     
-    const insertEventGroup = db.prepare(`
-      INSERT INTO event_groups (eventId, groupId) VALUES (?, ?)
-    `);
-
-    const startDateStr = date.split('T')[0];
-    const endDateStr = (endDate || date).split('T')[0];
-    const isShared = groupIds && groupIds.length > 0;
-
-    // Local SQLite transaction
-    const transaction = db.transaction(() => {
-      insertEvent.run(id, title, description, startDateStr, endDateStr, startTime || null, endTime || null, userId, userName, isShared ? 1 : 0);
-      if (isShared) {
+    console.log(`📝 Creating event "${title}" for user ${userName} (${userId})`);
+    
+    try {
+      if (groupIds && Array.isArray(groupIds)) {
         for (const gId of groupIds) {
-          insertEventGroup.run(id, gId);
+          const isMember = db.prepare("SELECT 1 FROM user_groups WHERE userId = ? AND groupId = ?").get(userId, gId);
+          if (!isMember) {
+            console.warn(`⚠️ User ${userName} not a member of group ${gId}`);
+            return res.status(403).json({ error: `You are not a member of group ${gId}` });
+          }
         }
       }
-    });
 
-    transaction();
-    console.log(`✅ Local event created: ${title} (${id})`);
+      const insertEvent = db.prepare(`
+        INSERT INTO events (id, title, description, date, endDate, startTime, endTime, userId, userName, isShared)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      
+      const insertEventGroup = db.prepare(`
+        INSERT INTO event_groups (eventId, groupId) VALUES (?, ?)
+      `);
 
-    // Supabase insertion with detailed error logging
-    try {
-      console.log(`🔄 Attempting to sync event to Supabase...`);
-      
-      // First, check if the user exists in Supabase
-      const { data: userCheck, error: userError } = await supabase
-        .from('users')
-        .select('id')
-        .eq('id', userId)
-        .single();
-      
-      if (userError) {
-        console.error(`❌ User ${userId} not found in Supabase:`, userError);
-        console.log(`⚠️ Event will not be synced to Supabase - user missing`);
-      } else {
-        console.log(`✅ User found in Supabase:`, userCheck);
-        
-        // Insert event
-        const { data: eventData, error: eventError } = await supabase
-          .from('events')
-          .insert([{
-            id, 
-            title, 
-            description, 
-            date: startDateStr, 
-            endDate: endDateStr, 
-            startTime: startTime || null, 
-            endTime: endTime || null, 
-            userId, 
-            userName, 
-            isShared: !!isShared
-          }])
-          .select();
-        
-        if (eventError) {
-          console.error("❌ Supabase event insert error:", {
-            code: eventError.code,
-            message: eventError.message,
-            details: eventError.details,
-            hint: eventError.hint
-          });
-          
-          // Check for foreign key violation
-          if (eventError.code === '23503') {
-            console.error(`🔍 Foreign key violation - user ${userId} might not exist in Supabase users table`);
+      const startDateStr = date.split('T')[0];
+      const endDateStr = (endDate || date).split('T')[0];
+      const isShared = groupIds && groupIds.length > 0;
+
+      // Local SQLite transaction
+      const transaction = db.transaction(() => {
+        insertEvent.run(id, title, description, startDateStr, endDateStr, startTime || null, endTime || null, userId, userName, isShared ? 1 : 0);
+        if (isShared) {
+          for (const gId of groupIds) {
+            insertEventGroup.run(id, gId);
           }
+        }
+      });
+
+      transaction();
+      console.log(`✅ Local event created: ${title} (${id})`);
+
+      // Supabase sync
+      try {
+        console.log(`🔄 Attempting to sync event to Supabase...`);
+        
+        // Check if user exists in Supabase
+        const { data: userCheck, error: userError } = await supabase
+          .from('users')
+          .select('id')
+          .eq('id', userId)
+          .single();
+        
+        if (userError) {
+          console.error(`❌ User ${userId} not found in Supabase:`, userError);
+          console.log(`⚠️ Event will not be synced to Supabase - user missing`);
         } else {
-          console.log(`✅ Supabase event created:`, eventData);
+          console.log(`✅ User found in Supabase:`, userCheck);
           
-          // Insert event_groups if shared
-          if (isShared && groupIds.length > 0) {
-            const egInserts = groupIds.map((gId: string) => ({ 
-              eventId: id, 
-              groupId: gId 
-            }));
+          // Insert event
+          const { data: eventData, error: eventError } = await supabase
+            .from('events')
+            .insert([{
+              id, 
+              title, 
+              description, 
+              date: startDateStr, 
+              endDate: endDateStr, 
+              startTime: startTime || null, 
+              endTime: endTime || null, 
+              userId, 
+              userName, 
+              isShared: !!isShared
+            }])
+            .select();
+          
+          if (eventError) {
+            console.error("❌ Supabase event insert error:", {
+              code: eventError.code,
+              message: eventError.message,
+              details: eventError.details,
+              hint: eventError.hint
+            });
+          } else {
+            console.log(`✅ Supabase event created:`, eventData);
             
-            console.log(`🔄 Inserting ${egInserts.length} event_group relations to Supabase...`);
-            
-            const { data: egData, error: egError } = await supabase
-              .from('event_groups')
-              .insert(egInserts)
-              .select();
-            
-            if (egError) {
-              console.error("❌ Supabase event_groups insert error:", {
-                code: egError.code,
-                message: egError.message,
-                details: egError.details,
-                hint: egError.hint
-              });
-            } else {
-              console.log(`✅ Supabase event_groups created:`, egData);
+            // Insert event_groups if shared
+            if (isShared && groupIds.length > 0) {
+              const egInserts = groupIds.map((gId: string) => ({ 
+                eventId: id, 
+                groupId: gId 
+              }));
+              
+              console.log(`🔄 Inserting ${egInserts.length} event_group relations to Supabase...`);
+              
+              const { data: egData, error: egError } = await supabase
+                .from('event_groups')
+                .insert(egInserts)
+                .select();
+              
+              if (egError) {
+                console.error("❌ Supabase event_groups insert error:", {
+                  code: egError.code,
+                  message: egError.message,
+                  details: egError.details,
+                  hint: egError.hint
+                });
+              } else {
+                console.log(`✅ Supabase event_groups created:`, egData);
+              }
             }
           }
         }
+      } catch (supabaseError) {
+        console.error("❌ Supabase exception during event sync:", supabaseError);
       }
-    } catch (supabaseError) {
-      console.error("❌ Supabase exception during event sync:", supabaseError);
+
+      const newEvent = { 
+        id, 
+        title, 
+        description, 
+        date: startDateStr, 
+        endDate: endDateStr, 
+        startTime, 
+        endTime, 
+        userId, 
+        userName, 
+        isShared, 
+        groupIds: groupIds || [],
+        commentCount: 0
+      };
+      
+      broadcast({ type: "EVENT_CREATED", payload: newEvent });
+      console.log(`✅ Event creation complete, returning success to client`);
+      res.status(201).json(newEvent);
+      
+    } catch (error) {
+      console.error("❌ Failed to create event:", error);
+      res.status(500).json({ error: "Failed to create event" });
     }
-
-    const newEvent = { 
-      id, 
-      title, 
-      description, 
-      date: startDateStr, 
-      endDate: endDateStr, 
-      startTime, 
-      endTime, 
-      userId, 
-      userName, 
-      isShared, 
-      groupIds: groupIds || [],
-      commentCount: 0
-    };
-    
-    broadcast({ type: "EVENT_CREATED", payload: newEvent });
-    console.log(`✅ Event creation complete, returning success to client`);
-    res.status(201).json(newEvent);
-    
-  } catch (error) {
-    console.error("❌ Failed to create event:", error);
-    res.status(500).json({ error: "Failed to create event" });
-  }
-});
-
-// Add this temporary test route to check Supabase connection
-app.get("/api/test/supabase", authenticate, adminOnly, async (req, res) => {
-  try {
-    // Test 1: List all users
-    const { data: users, error: usersError } = await supabase
-      .from('users')
-      .select('*');
-    
-    // Test 2: List all events
-    const { data: events, error: eventsError } = await supabase
-      .from('events')
-      .select('*');
-    
-    res.json({
-      connection: "OK",
-      users: {
-        count: users?.length || 0,
-        data: users,
-        error: usersError
-      },
-      events: {
-        count: events?.length || 0,
-        data: events,
-        error: eventsError
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ error: String(error) });
-  }
-});
+  });
 
   app.put("/api/events/:id", authenticate, async (req: any, res) => {
     const { id } = req.params;
@@ -1325,6 +1322,7 @@ app.get("/api/test/supabase", authenticate, adminOnly, async (req, res) => {
       await supabase.from('comments').insert([{
         id: commentId, eventId: id, userId, userName, text
       }]);
+      
       const newComment = db.prepare(`
         SELECT c.id, c.eventId, c.userId, c.userName, c.text, strftime('%Y-%m-%dT%H:%M:%SZ', c.createdAt) as createdAt, u.profileImage 
         FROM comments c
@@ -1361,6 +1359,7 @@ app.get("/api/test/supabase", authenticate, adminOnly, async (req, res) => {
       
       // Supabase
       await supabase.from('comments').delete().eq('id', commentId);
+      
       const countResult = db.prepare("SELECT COUNT(*) as count FROM comments WHERE eventId = ?").get(eventId) as any;
       const newCount = countResult ? countResult.count : 0;
 
@@ -1369,6 +1368,36 @@ app.get("/api/test/supabase", authenticate, adminOnly, async (req, res) => {
     } catch (error) {
       console.error("Delete comment error:", error);
       res.status(500).json({ error: "Failed to delete comment" });
+    }
+  });
+
+  // --- PUBLIC TEST ROUTES ---
+  app.get("/api/health", (req, res) => {
+    res.json({ 
+      status: "healthy", 
+      timestamp: Date.now(),
+      supabase_configured: true
+    });
+  });
+
+  app.get("/api/test/supabase-public", async (req, res) => {
+    try {
+      const { data: users, error: usersError } = await supabase
+        .from('users')
+        .select('*')
+        .limit(5);
+      
+      res.json({
+        status: "ok",
+        supabase_connected: !usersError,
+        users_sample: users,
+        error: usersError
+      });
+    } catch (error) {
+      res.status(500).json({ 
+        status: "error", 
+        message: String(error)
+      });
     }
   });
 
