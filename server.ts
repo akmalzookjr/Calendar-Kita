@@ -881,16 +881,19 @@ async function startServer() {
         
       } catch (error) {
         console.error("Holiday API failed:", error);
-        // Return 0 count instead of error to allow frontend AI fallback
-        return res.json({ 
-          message: "External holiday API failed, please use AI fallback", 
-          count: 0,
-          apiError: true
+        return res.status(502).json({ 
+          error: "External holiday API failed", 
+          externalApiFailed: true,
+          message: "The primary holiday service is currently unavailable."
         });
       }
 
       if (!holidays.length) {
-        return res.json({ message: "No holidays found for this year", count: 0 });
+        return res.json({ 
+          message: "No holidays found for this year via primary API", 
+          count: 0,
+          noResults: true 
+        });
       }
 
       // Group holidays by date to prevent duplicates in a day

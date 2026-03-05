@@ -262,26 +262,28 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
     setIsSyncingHolidays(true);
     try {
       const year = new Date().getFullYear();
+      const countryCode = settings.holidayCountryCode || "MY";
+      
       const res = await fetch(`/api/holidays/sync/${year}`, { credentials: "include" });
       const data = await res.json();
       
-      // Trigger AI fallback if API fails OR returns 0 holidays
-      if (!res.ok || data.count === 0) {
-        const countryCode = settings.holidayCountryCode || "MY";
-        console.log(`Holiday API ${res.ok ? 'returned 0 holidays' : 'failed with status ' + res.status}. Falling back to Gemini...`);
-        
-        const apiKey = process.env.GEMINI_API_KEY;
-        if (!apiKey) {
-          if (!res.ok) {
-            alert(`Holiday API failed (${res.status}) and Gemini API key is missing. Please set GEMINI_API_KEY in your environment.`);
-          } else {
-            alert("No holidays found and Gemini API key is missing. Please set GEMINI_API_KEY for AI fallback.");
-          }
-          return;
-        }
+      if (res.ok && data.count > 0) {
+        alert(`Successfully synced ${data.count} holidays!`);
+        return;
+      }
 
+      // If backend failed or returned 0, try AI Fallback from Frontend
+      console.log("Primary API failed or returned 0. Attempting AI fallback from frontend...");
+      
+      const apiKey = (process.env.GEMINI_API_KEY as string);
+      if (!apiKey) {
+        alert("Gemini API key is missing. Please set GEMINI_API_KEY in your environment.");
+        return;
+      }
+
+      try {
         const ai = new GoogleGenAI({ apiKey });
-        const response = await ai.models.generateContent({
+        const aiResponse = await ai.models.generateContent({
           model: "gemini-3-flash-preview",
           contents: `Generate a list of public holidays for ${countryCode} in the year ${year}. Return the data in JSON format as an array of objects with 'date' (YYYY-MM-DD), 'localName' (string), and 'name' (string).`,
           config: {
@@ -301,25 +303,32 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
           }
         });
 
-        const holidays = JSON.parse(response.text || "[]");
-        if (holidays && holidays.length > 0) {
+        const holidays = JSON.parse(aiResponse.text || "[]");
+        if (Array.isArray(holidays) && holidays.length > 0) {
+          // Import the generated holidays back to the server
           const importRes = await fetch("/api/holidays/import", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ holidays, year }),
             credentials: "include"
           });
-          const importData = await importRes.json();
+          
           if (importRes.ok) {
-            alert(`Successfully generated and synced ${importData.count} holidays using AI fallback!`);
+            const importData = await importRes.json();
+            alert(`Successfully generated and synced ${importData.count} holidays using AI!`);
           } else {
-            alert(`AI Sync failed: ${importData.error || "Unknown error"}`);
+            alert("AI generated holidays but failed to save them to the server.");
           }
         } else {
-          alert("AI failed to generate holidays.");
+          alert("AI failed to generate any holidays.");
         }
-      } else {
-        alert(`Successfully synced ${data.count} holidays!`);
+      } catch (aiError: any) {
+        console.error("Frontend AI Fallback failed:", aiError);
+        if (aiError.message?.includes("API key not valid") || JSON.stringify(aiError).includes("API_KEY_INVALID")) {
+          alert("The Gemini API key is invalid. Please ensure you have a valid key from Google AI Studio.");
+        } else {
+          alert("Failed to generate holidays using AI fallback.");
+        }
       }
     } catch (e) {
       console.error("Sync failed", e);
@@ -1704,56 +1713,7 @@ export default function App() {
       try {
         const res = await fetch(`/api/holidays/sync/${year}`, { credentials: "include" });
         const data = await res.json();
-        
-        // Trigger AI fallback if API fails OR returns 0 holidays
-        if ((!res.ok || data.count === 0) && user.isAdmin) {
-          // We fetch settings first to get the country code
-          const settingsRes = await fetch("/api/settings", { credentials: "include" });
-          const settings = await settingsRes.json();
-          const countryCode = settings.holidayCountryCode || "MY";
-          
-          const apiKey = process.env.GEMINI_API_KEY;
-          if (!apiKey) {
-            console.warn("Gemini API key is missing for holiday fallback.");
-            return;
-          }
-
-          console.log(`Holiday API ${res.ok ? 'returned 0 holidays' : 'failed'}. Falling back to Gemini...`);
-          
-          const ai = new GoogleGenAI({ apiKey });
-          const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
-            contents: `Generate a list of public holidays for ${countryCode} in the year ${year}. Return the data in JSON format as an array of objects with 'date' (YYYY-MM-DD), 'localName' (string), and 'name' (string).`,
-            config: {
-              responseMimeType: "application/json",
-              responseSchema: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    date: { type: Type.STRING },
-                    localName: { type: Type.STRING },
-                    name: { type: Type.STRING },
-                  },
-                  required: ["date", "localName", "name"]
-                }
-              }
-            }
-          });
-
-          const holidays = JSON.parse(response.text || "[]");
-          if (holidays && holidays.length > 0) {
-            const importRes = await fetch("/api/holidays/import", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ holidays, year }),
-              credentials: "include"
-            });
-            if (importRes.ok) {
-              fetchEvents();
-            }
-          }
-        } else if (res.ok && data.count > 0) {
+        if (res.ok && data.count > 0) {
           fetchEvents();
         }
       } catch (e) {
