@@ -16,6 +16,19 @@ import Database from "better-sqlite3";
 import dotenv from 'dotenv';
 dotenv.config();
 
+// Add this debug helper after your imports
+async function debugSupabaseOperation(operation: string, promise: Promise<any>) {
+  console.log(`🔄 Starting Supabase ${operation}...`);
+  try {
+    const result = await promise;
+    console.log(`✅ Supabase ${operation} successful:`, result);
+    return result;
+  } catch (error) {
+    console.error(`❌ Supabase ${operation} failed:`, error);
+    throw error;
+  }
+}
+
 // --- CLOUD CONFIG ---
 const SUPABASE_URL = 'https://vshmnnxcskpejlnnbveu.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZzaG1ubnhjc2twZWpsbm5idmV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2OTgzNzUsImV4cCI6MjA4ODI3NDM3NX0.hjfEaRV7F7EFmA-1OWVllra6Y3E6mLa5MSI0aWkX5z0';
@@ -425,29 +438,38 @@ async function startServer() {
   };
   seedAdmin();
 
-  // --- AUTH ROUTES ---
-  app.post("/api/auth/register", async (req, res) => {
-    const { username, password } = req.body;
+app.post("/api/auth/register", async (req, res) => {
+  const { username, password } = req.body;
+  try {
+    const id = crypto.randomUUID();
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
+    // Local DB
+    db.prepare("INSERT INTO users (id, username, password) VALUES (?, ?, ?)").run(id, username, hashedPassword);
+    console.log(`✅ Local user created: ${username} (${id})`);
+    
+    // Supabase backup with better error logging
     try {
-      const id = crypto.randomUUID();
-      const hashedPassword = await bcrypt.hash(password, 10);
+      const { data, error } = await supabase.from('users').insert([{ 
+        id, 
+        username, 
+        password: hashedPassword, 
+        isAdmin: false 
+      }]);
       
-      // Local DB
-      db.prepare("INSERT INTO users (id, username, password) VALUES (?, ?, ?)").run(id, username, hashedPassword);
-      
-      // Supabase backup
-      const { error: supabaseError } = await supabase.from('users').insert([{ id, username, password: hashedPassword, isAdmin: false }]);
-      if (supabaseError) console.error("Supabase registration error:", supabaseError);
-      
-      broadcast({
-        type: "USER_REGISTERED",
-        payload: {
-          id,
-          username,
-          isAdmin: false,
-          groups: []
-        }
-      });
+      if (error) {
+        console.error("❌ Supabase registration error details:", {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        });
+      } else {
+        console.log(`✅ Supabase user created: ${username}`);
+      }
+    } catch (supabaseError) {
+      console.error("❌ Supabase registration exception:", supabaseError);
+    }
 
       res.status(201).json({ message: "User registered" });
     } catch (error: any) {
@@ -949,77 +971,137 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
     }
   });
 
-  app.post("/api/events", authenticate, async (req: any, res) => {
-    const { id, title, description, date, endDate, startTime, endTime, groupIds } = req.body;
-    const userId = req.user.id;
-    const userName = req.user.username;
-    
-    try {
-      if (groupIds && Array.isArray(groupIds)) {
-        for (const gId of groupIds) {
-          const isMember = db.prepare("SELECT 1 FROM user_groups WHERE userId = ? AND groupId = ?").get(userId, gId);
-          if (!isMember) {
-            return res.status(403).json({ error: `You are not a member of group ${gId}` });
-          }
+app.post("/api/events", authenticate, async (req: any, res) => {
+  const { id, title, description, date, endDate, startTime, endTime, groupIds } = req.body;
+  const userId = req.user.id;
+  const userName = req.user.username;
+  
+  console.log(`📝 Creating event "${title}" for user ${userName} (${userId})`);
+  
+  try {
+    if (groupIds && Array.isArray(groupIds)) {
+      for (const gId of groupIds) {
+        const isMember = db.prepare("SELECT 1 FROM user_groups WHERE userId = ? AND groupId = ?").get(userId, gId);
+        if (!isMember) {
+          console.warn(`⚠️ User ${userName} not a member of group ${gId}`);
+          return res.status(403).json({ error: `You are not a member of group ${gId}` });
         }
       }
-
-      const insertEvent = db.prepare(`
-        INSERT INTO events (id, title, description, date, endDate, startTime, endTime, userId, userName, isShared)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      
-      const insertEventGroup = db.prepare(`
-        INSERT INTO event_groups (eventId, groupId) VALUES (?, ?)
-      `);
-
-      const startDateStr = date.split('T')[0];
-      const endDateStr = (endDate || date).split('T')[0];
-      const isShared = groupIds && groupIds.length > 0;
-
-      const transaction = db.transaction(() => {
-        insertEvent.run(id, title, description, startDateStr, endDateStr, startTime || null, endTime || null, userId, userName, isShared ? 1 : 0);
-        if (isShared) {
-          for (const gId of groupIds) {
-            insertEventGroup.run(id, gId);
-          }
-        }
-      });
-
-      transaction();
-
-      // Supabase
-      await supabase.from('events').insert([{
-        id, title, description, date: startDateStr, endDate: endDateStr, 
-        startTime: startTime || null, endTime: endTime || null, 
-        userId, userName, isShared: !!isShared
-      }]);
-      if (isShared) {
-        const egInserts = groupIds.map((gId: string) => ({ eventId: id, groupId: gId }));
-        await supabase.from('event_groups').insert(egInserts);
-      }
-
-      const newEvent = { 
-        id, 
-        title, 
-        description, 
-        date: startDateStr, 
-        endDate: endDateStr, 
-        startTime, 
-        endTime, 
-        userId, 
-        userName, 
-        isShared, 
-        groupIds: groupIds || [],
-        commentCount: 0
-      };
-      broadcast({ type: "EVENT_CREATED", payload: newEvent });
-      res.status(201).json(newEvent);
-    } catch (error) {
-      console.error("Failed to create event:", error);
-      res.status(500).json({ error: "Failed to create event" });
     }
-  });
+
+    const insertEvent = db.prepare(`
+      INSERT INTO events (id, title, description, date, endDate, startTime, endTime, userId, userName, isShared)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    
+    const insertEventGroup = db.prepare(`
+      INSERT INTO event_groups (eventId, groupId) VALUES (?, ?)
+    `);
+
+    const startDateStr = date.split('T')[0];
+    const endDateStr = (endDate || date).split('T')[0];
+    const isShared = groupIds && groupIds.length > 0;
+
+    // Local SQLite transaction
+    const transaction = db.transaction(() => {
+      insertEvent.run(id, title, description, startDateStr, endDateStr, startTime || null, endTime || null, userId, userName, isShared ? 1 : 0);
+      if (isShared) {
+        for (const gId of groupIds) {
+          insertEventGroup.run(id, gId);
+        }
+      }
+    });
+
+    transaction();
+    console.log(`✅ Local event created: ${title} (${id})`);
+
+    // Supabase insertion with detailed error logging
+    try {
+      console.log(`🔄 Attempting to sync event to Supabase...`);
+      
+      // Insert event
+      const { data: eventData, error: eventError } = await supabase
+        .from('events')
+        .insert([{
+          id, 
+          title, 
+          description, 
+          date: startDateStr, 
+          endDate: endDateStr, 
+          startTime: startTime || null, 
+          endTime: endTime || null, 
+          userId, 
+          userName, 
+          isShared: !!isShared
+        }])
+        .select();
+      
+      if (eventError) {
+        console.error("❌ Supabase event insert error:", {
+          code: eventError.code,
+          message: eventError.message,
+          details: eventError.details,
+          hint: eventError.hint
+        });
+      } else {
+        console.log(`✅ Supabase event created:`, eventData);
+      }
+      
+      // Insert event_groups if shared
+      if (isShared && groupIds.length > 0) {
+        const egInserts = groupIds.map((gId: string) => ({ 
+          eventId: id, 
+          groupId: gId 
+        }));
+        
+        console.log(`🔄 Inserting ${egInserts.length} event_group relations to Supabase...`);
+        
+        const { data: egData, error: egError } = await supabase
+          .from('event_groups')
+          .insert(egInserts)
+          .select();
+        
+        if (egError) {
+          console.error("❌ Supabase event_groups insert error:", {
+            code: egError.code,
+            message: egError.message,
+            details: egError.details,
+            hint: egError.hint
+          });
+        } else {
+          console.log(`✅ Supabase event_groups created:`, egData);
+        }
+      }
+    } catch (supabaseError) {
+      console.error("❌ Supabase exception during event sync:", supabaseError);
+      // Don't throw - we still want to return success to the client
+      // since local DB insert worked
+    }
+
+    const newEvent = { 
+      id, 
+      title, 
+      description, 
+      date: startDateStr, 
+      endDate: endDateStr, 
+      startTime, 
+      endTime, 
+      userId, 
+      userName, 
+      isShared, 
+      groupIds: groupIds || [],
+      commentCount: 0
+    };
+    
+    broadcast({ type: "EVENT_CREATED", payload: newEvent });
+    console.log(`✅ Event creation complete, returning success to client`);
+    res.status(201).json(newEvent);
+    
+  } catch (error) {
+    console.error("❌ Failed to create event:", error);
+    res.status(500).json({ error: "Failed to create event" });
+  }
+});
 
   app.put("/api/events/:id", authenticate, async (req: any, res) => {
     const { id } = req.params;
