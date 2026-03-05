@@ -6,7 +6,7 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   server: {
     // PASTE YOUR NGROK LINK BELOW
-    url: 'https://frostiest-alison-unilluded.ngrok-free.dev',
+    url: 'https://family-calendar-kita.onrender.com',
     cleartext: true
   }
 };
