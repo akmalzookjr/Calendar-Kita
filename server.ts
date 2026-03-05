@@ -656,7 +656,7 @@ async function startServer() {
     }
   });
 
-  // --- HOLIDAY ROUTES ---
+    // --- HOLIDAY ROUTES ---
   app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
     const { year } = req.params;
     
@@ -692,7 +692,7 @@ async function startServer() {
       if (!apiSuccess) {
         console.log(`Using fallback holiday data for ${year}`);
         
-        // Malaysia public holidays for common years
+        // Malaysia public holidays for common years - REMOVED DUPLICATES
         const fallbackHolidays: { [key: string]: any[] } = {
           "2024": [
             { date: "2024-01-01", localName: "New Year's Day", name: "New Year's Day" },
@@ -744,9 +744,34 @@ async function startServer() {
         holidays = fallbackHolidays[year] || fallbackHolidays["2026"];
       }
 
+      // First, delete ALL existing system-generated holidays for this year to prevent duplicates
+      // This ensures we start fresh each time
+      const startDate = `${year}-01-01`;
+      const endDate = `${year}-12-31`;
+      
+      db.prepare(`
+        DELETE FROM events 
+        WHERE systemGenerated = 1 
+        AND type = 'public_holiday'
+        AND date >= ? 
+        AND date <= ?
+      `).run(startDate, endDate);
+
+      // Also delete from event_groups for these events
+      db.prepare(`
+        DELETE FROM event_groups 
+        WHERE eventId IN (
+          SELECT id FROM events 
+          WHERE systemGenerated = 1 
+          AND type = 'public_holiday'
+          AND date >= ? 
+          AND date <= ?
+        )
+      `).run(startDate, endDate);
+
       // Insert holidays into database
       const insertHoliday = db.prepare(`
-        INSERT OR IGNORE INTO events 
+        INSERT INTO events 
         (id, title, description, date, endDate, userId, userName, isShared, type, systemGenerated, readOnly) 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
@@ -754,11 +779,12 @@ async function startServer() {
       let insertedCount = 0;
       const transaction = db.transaction(() => {
         for (const holiday of holidays) {
-          // Create a consistent ID that won't duplicate
-          const id = `holiday-${year}-${holiday.date}-${holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
+          // Create a consistent ID based on date and name
+          const safeName = holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+          const id = `holiday-${holiday.date}-${safeName}`;
           
           try {
-            const result = insertHoliday.run(
+            insertHoliday.run(
               id,
               holiday.localName,
               holiday.name,
@@ -771,19 +797,19 @@ async function startServer() {
               1,  // systemGenerated
               1   // readOnly
             );
-            
-            if (result.changes && result.changes > 0) {
-              insertedCount++;
-            }
+            insertedCount++;
           } catch (err) {
-            console.error(`Failed to insert holiday ${holiday.localName}:`, err);
+            // If it's a unique constraint error, it's okay - holiday already exists
+            if (!err.message.includes('UNIQUE')) {
+              console.error(`Failed to insert holiday ${holiday.localName}:`, err);
+            }
           }
         }
       });
 
       transaction();
       
-      console.log(`Successfully inserted ${insertedCount} holidays for ${year}`);
+      console.log(`Successfully synced ${insertedCount} holidays for ${year}`);
       res.json({ 
         message: `Synced ${insertedCount} holidays for ${year}`, 
         count: insertedCount 
