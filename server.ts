@@ -42,6 +42,7 @@ db.exec(`
     bio TEXT,
     profileImage TEXT,
     themeColor TEXT DEFAULT '#10b981',
+    backgroundStyle TEXT DEFAULT 'default',
     isAdmin INTEGER DEFAULT 0,
     role TEXT DEFAULT 'User',
     createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -122,12 +123,7 @@ try {
     }
   };
 
-  // Add new columns to users if they don't exist
-  ensureColumn('users', 'name', 'TEXT');
-  ensureColumn('users', 'bio', 'TEXT');
-  ensureColumn('users', 'profileImage', 'TEXT');
-  ensureColumn('users', 'role', "TEXT DEFAULT 'User'");
-  ensureColumn('users', 'themeColor', "TEXT DEFAULT '#10b981'");
+  // Add missing columns
   ensureColumn('users', 'backgroundStyle', "TEXT DEFAULT 'default'");
   ensureColumn('users', 'updatedAt', 'TEXT DEFAULT CURRENT_TIMESTAMP');
 
@@ -174,11 +170,17 @@ if (groupCount.count === 0) {
   db.prepare("INSERT INTO groups (id, name) VALUES (?, ?)").run(familyGroupId, "Family");
   
   try {
-    const familyMembers = db.prepare("SELECT userId FROM family_members").all() as any[];
-    for (const member of familyMembers) {
-      db.prepare("INSERT OR IGNORE INTO user_groups (userId, groupId) VALUES (?, ?)").run(member.userId, familyGroupId);
+    // Check if family_members table exists before trying to migrate from it
+    const tableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='family_members'").get();
+    if (tableCheck) {
+      const familyMembers = db.prepare("SELECT userId FROM family_members").all() as any[];
+      for (const member of familyMembers) {
+        db.prepare("INSERT OR IGNORE INTO user_groups (userId, groupId) VALUES (?, ?)").run(member.userId, familyGroupId);
+      }
     }
-  } catch (e) {}
+  } catch (e) {
+    console.log("No family_members table to migrate");
+  }
 
   const sharedEvents = db.prepare("SELECT id FROM events WHERE isShared = 1").all() as any[];
   for (const event of sharedEvents) {
@@ -209,7 +211,13 @@ async function startServer() {
   const isProd = process.env.NODE_ENV === "production";
   console.log(`--- RUNNING IN ${isProd ? "PRODUCTION" : "DEVELOPMENT"} MODE ---`);
 
-  app.use(cors({ origin: true, credentials: true }));
+  app.use(cors({ 
+    origin: true, 
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie']
+  }));
+  
   app.use(express.json());
   app.use(cookieParser());
   app.use("/profile-images", express.static(profileImagesDir));
@@ -300,7 +308,7 @@ async function startServer() {
   app.post("/api/auth/register", async (req, res) => {
     const { username, password } = req.body;
     try {
-      const id = Math.random().toString(36).substr(2, 9);
+      const id = crypto.randomUUID();
       const hashedPassword = await bcrypt.hash(password, 10);
       
       // Local DB
@@ -328,6 +336,7 @@ async function startServer() {
       if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
         return res.status(400).json({ error: "Username already exists" });
       }
+      console.error("Registration error:", error);
       res.status(500).json({ error: "Registration failed" });
     }
   });
@@ -364,6 +373,7 @@ async function startServer() {
         groups: groups
       });
     } catch (error) {
+      console.error("Login error:", error);
       res.status(500).json({ error: "Login failed" });
     }
   });
@@ -497,17 +507,22 @@ async function startServer() {
 
   // --- ADMIN ROUTES ---
   app.get("/api/admin/users", authenticate, adminOnly, (req, res) => {
-    const users = db.prepare(`SELECT id, username, isAdmin FROM users`).all() as any[];
-    const usersWithGroups = users.map(user => {
-      const groups = db.prepare(`
-        SELECT g.id, g.name 
-        FROM groups g
-        JOIN user_groups ug ON g.id = ug.groupId
-        WHERE ug.userId = ?
-      `).all(user.id);
-      return { ...user, groups };
-    });
-    res.json(usersWithGroups);
+    try {
+      const users = db.prepare(`SELECT id, username, isAdmin, role FROM users`).all() as any[];
+      const usersWithGroups = users.map(user => {
+        const groups = db.prepare(`
+          SELECT g.id, g.name 
+          FROM groups g
+          JOIN user_groups ug ON g.id = ug.groupId
+          WHERE ug.userId = ?
+        `).all(user.id);
+        return { ...user, groups };
+      });
+      res.json(usersWithGroups);
+    } catch (error) {
+      console.error("Failed to fetch users:", error);
+      res.status(500).json({ error: "Failed to fetch users" });
+    }
   });
 
   app.put("/api/admin/users/:userId", authenticate, adminOnly, async (req, res) => {
@@ -545,11 +560,13 @@ async function startServer() {
     try {
       const deleteEvents = db.prepare("DELETE FROM events WHERE userId = ?");
       const deleteUserGroups = db.prepare("DELETE FROM user_groups WHERE userId = ?");
+      const deleteComments = db.prepare("DELETE FROM comments WHERE userId = ?");
       const deleteUser = db.prepare("DELETE FROM users WHERE id = ?");
 
       const transaction = db.transaction(() => {
         deleteEvents.run(userId);
         deleteUserGroups.run(userId);
+        deleteComments.run(userId);
         deleteUser.run(userId);
       });
 
@@ -564,18 +581,31 @@ async function startServer() {
   });
 
   app.get("/api/admin/groups", authenticate, adminOnly, (req, res) => {
-    const groups = db.prepare("SELECT id, name, strftime('%Y-%m-%dT%H:%M:%SZ', createdAt) as createdAt FROM groups").all();
-    res.json(groups);
+    try {
+      const groups = db.prepare("SELECT id, name, strftime('%Y-%m-%dT%H:%M:%SZ', createdAt) as createdAt FROM groups").all();
+      res.json(groups);
+    } catch (error) {
+      console.error("Failed to fetch groups:", error);
+      res.status(500).json({ error: "Failed to fetch groups" });
+    }
   });
 
   app.post("/api/admin/groups", authenticate, adminOnly, (req, res) => {
     const { name } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: "Group name is required" });
+    }
+    
     try {
-      const id = Math.random().toString(36).substr(2, 9);
-      db.prepare("INSERT INTO groups (id, name) VALUES (?, ?)").run(id, name);
-      broadcast({ type: "GROUP_CREATED", payload: { id, name } });
-      res.status(201).json({ id, name });
+      const id = crypto.randomUUID();
+      db.prepare("INSERT INTO groups (id, name) VALUES (?, ?)").run(id, name.trim());
+      
+      const newGroup = { id, name: name.trim(), createdAt: new Date().toISOString() };
+      broadcast({ type: "GROUP_CREATED", payload: newGroup });
+      
+      res.status(201).json(newGroup);
     } catch (error) {
+      console.error("Failed to create group:", error);
       res.status(500).json({ error: "Failed to create group" });
     }
   });
@@ -583,6 +613,11 @@ async function startServer() {
   app.post("/api/admin/groups/:groupId/members", authenticate, adminOnly, (req, res) => {
     const { groupId } = req.params;
     const { userId, action } = req.body;
+    
+    if (!userId || !action || !['add', 'remove'].includes(action)) {
+      return res.status(400).json({ error: "Invalid request" });
+    }
+    
     try {
       if (action === 'add') {
         db.prepare("INSERT OR IGNORE INTO user_groups (userId, groupId) VALUES (?, ?)").run(userId, groupId);
@@ -592,6 +627,7 @@ async function startServer() {
       broadcast({ type: "USER_UPDATED", payload: { userId } });
       res.json({ success: true });
     } catch (error) {
+      console.error("Operation failed:", error);
       res.status(500).json({ error: "Operation failed" });
     }
   });
@@ -599,27 +635,23 @@ async function startServer() {
   app.delete("/api/admin/groups/:groupId", authenticate, adminOnly, (req, res) => {
     const { groupId } = req.params;
     try {
-      const deleteEvents = db.prepare(`
-        DELETE FROM events 
-        WHERE id IN (SELECT eventId FROM event_groups WHERE groupId = ?)
-      `);
-      const deleteEventGroups = db.prepare("DELETE FROM event_groups WHERE groupId = ?");
-      const deleteUserGroups = db.prepare("DELETE FROM user_groups WHERE groupId = ?");
-      const deleteGroup = db.prepare("DELETE FROM groups WHERE id = ?");
-
-      const transaction = db.transaction(() => {
-        deleteEvents.run(groupId);
-        deleteEventGroups.run(groupId);
-        deleteUserGroups.run(groupId);
-        deleteGroup.run(groupId);
-      });
-
-      transaction();
+      // First delete event associations
+      db.prepare("DELETE FROM event_groups WHERE groupId = ?").run(groupId);
+      
+      // Delete user group associations
+      db.prepare("DELETE FROM user_groups WHERE groupId = ?").run(groupId);
+      
+      // Finally delete the group
+      const result = db.prepare("DELETE FROM groups WHERE id = ?").run(groupId);
+      
+      if (result.changes === 0) {
+        return res.status(404).json({ error: "Group not found" });
+      }
 
       broadcast({ type: "GROUP_DELETED", payload: { groupId } });
       res.json({ success: true });
     } catch (error) {
-      console.error("Failed to delete group", error);
+      console.error("Failed to delete group:", error);
       res.status(500).json({ error: "Failed to delete group" });
     }
   });
@@ -627,25 +659,72 @@ async function startServer() {
   // --- HOLIDAY ROUTES ---
   app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
     const { year } = req.params;
+    
+    // Validate year
+    const yearNum = parseInt(year);
+    if (isNaN(yearNum) || yearNum < 2020 || yearNum > 2030) {
+      return res.status(400).json({ error: "Invalid year" });
+    }
+
     try {
       let holidays = [];
       let apiSuccess = false;
+      
+      // Try to fetch from API
       try {
+        console.log(`Fetching holidays for ${year} from API...`);
         const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/MY`);
         if (response.ok) {
           const text = await response.text();
           if (text && text.trim()) {
             holidays = JSON.parse(text);
             apiSuccess = true;
+            console.log(`Successfully fetched ${holidays.length} holidays from API`);
           }
+        } else {
+          console.log(`API returned status ${response.status}`);
         }
       } catch (e) {
-        console.warn("Holiday API failed, using fallback");
+        console.warn("Holiday API failed, using fallback:", e);
       }
 
+      // Use fallback data if API failed
       if (!apiSuccess) {
-        if (year === "2026") {
-          holidays = [
+        console.log(`Using fallback holiday data for ${year}`);
+        
+        // Malaysia public holidays for common years
+        const fallbackHolidays: { [key: string]: any[] } = {
+          "2024": [
+            { date: "2024-01-01", localName: "New Year's Day", name: "New Year's Day" },
+            { date: "2024-02-10", localName: "Chinese New Year", name: "Chinese New Year" },
+            { date: "2024-02-11", localName: "Chinese New Year Day 2", name: "Chinese New Year Day 2" },
+            { date: "2024-03-23", localName: "Hari Raya Puasa", name: "Eid al-Fitr" },
+            { date: "2024-03-24", localName: "Hari Raya Puasa Day 2", name: "Eid al-Fitr Day 2" },
+            { date: "2024-05-01", localName: "Labour Day", name: "Labour Day" },
+            { date: "2024-06-03", localName: "Agong's Birthday", name: "Agong's Birthday" },
+            { date: "2024-06-17", localName: "Hari Raya Haji", name: "Eid al-Adha" },
+            { date: "2024-07-07", localName: "Islamic New Year", name: "Islamic New Year" },
+            { date: "2024-08-31", localName: "National Day", name: "National Day" },
+            { date: "2024-09-16", localName: "Malaysia Day", name: "Malaysia Day" },
+            { date: "2024-10-19", localName: "Deepavali", name: "Deepavali" },
+            { date: "2024-12-25", localName: "Christmas Day", name: "Christmas Day" },
+          ],
+          "2025": [
+            { date: "2025-01-01", localName: "New Year's Day", name: "New Year's Day" },
+            { date: "2025-01-29", localName: "Chinese New Year", name: "Chinese New Year" },
+            { date: "2025-01-30", localName: "Chinese New Year Day 2", name: "Chinese New Year Day 2" },
+            { date: "2025-03-31", localName: "Hari Raya Puasa", name: "Eid al-Fitr" },
+            { date: "2025-04-01", localName: "Hari Raya Puasa Day 2", name: "Eid al-Fitr Day 2" },
+            { date: "2025-05-01", localName: "Labour Day", name: "Labour Day" },
+            { date: "2025-06-02", localName: "Agong's Birthday", name: "Agong's Birthday" },
+            { date: "2025-06-07", localName: "Hari Raya Haji", name: "Eid al-Adha" },
+            { date: "2025-06-27", localName: "Islamic New Year", name: "Islamic New Year" },
+            { date: "2025-08-31", localName: "National Day", name: "National Day" },
+            { date: "2025-09-16", localName: "Malaysia Day", name: "Malaysia Day" },
+            { date: "2025-10-20", localName: "Deepavali", name: "Deepavali" },
+            { date: "2025-12-25", localName: "Christmas Day", name: "Christmas Day" },
+          ],
+          "2026": [
             { date: "2026-01-01", localName: "New Year's Day", name: "New Year's Day" },
             { date: "2026-02-17", localName: "Chinese New Year", name: "Chinese New Year" },
             { date: "2026-02-18", localName: "Chinese New Year Day 2", name: "Chinese New Year Day 2" },
@@ -653,39 +732,63 @@ async function startServer() {
             { date: "2026-03-21", localName: "Hari Raya Puasa Day 2", name: "Eid al-Fitr Day 2" },
             { date: "2026-05-01", localName: "Labour Day", name: "Labour Day" },
             { date: "2026-05-27", localName: "Hari Raya Haji", name: "Eid al-Adha" },
+            { date: "2026-06-01", localName: "Agong's Birthday", name: "Agong's Birthday" },
+            { date: "2026-06-17", localName: "Islamic New Year", name: "Islamic New Year" },
             { date: "2026-08-31", localName: "National Day", name: "National Day" },
             { date: "2026-09-16", localName: "Malaysia Day", name: "Malaysia Day" },
+            { date: "2026-11-08", localName: "Deepavali", name: "Deepavali" },
             { date: "2026-12-25", localName: "Christmas Day", name: "Christmas Day" },
-          ];
-        }
+          ]
+        };
+        
+        holidays = fallbackHolidays[year] || fallbackHolidays["2026"];
       }
 
+      // Insert holidays into database
       const insertHoliday = db.prepare(`
-        INSERT OR IGNORE INTO events (id, title, description, date, endDate, userId, userName, isShared, type, systemGenerated, readOnly)
+        INSERT OR IGNORE INTO events 
+        (id, title, description, date, endDate, userId, userName, isShared, type, systemGenerated, readOnly) 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
+      let insertedCount = 0;
       const transaction = db.transaction(() => {
         for (const holiday of holidays) {
-          const id = `holiday-${holiday.date}-${holiday.localName.replace(/\s+/g, '-').toLowerCase()}`;
-          insertHoliday.run(
-            id,
-            holiday.localName,
-            holiday.name,
-            holiday.date,
-            holiday.date,
-            'system',
-            'System',
-            1,
-            'public_holiday',
-            1,
-            1
-          );
+          // Create a consistent ID that won't duplicate
+          const id = `holiday-${year}-${holiday.date}-${holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
+          
+          try {
+            const result = insertHoliday.run(
+              id,
+              holiday.localName,
+              holiday.name,
+              holiday.date,
+              holiday.date,
+              'system',
+              'System',
+              1,  // isShared
+              'public_holiday',
+              1,  // systemGenerated
+              1   // readOnly
+            );
+            
+            if (result.changes && result.changes > 0) {
+              insertedCount++;
+            }
+          } catch (err) {
+            console.error(`Failed to insert holiday ${holiday.localName}:`, err);
+          }
         }
       });
 
       transaction();
-      res.json({ message: `Synced ${holidays.length} holidays for ${year}`, count: holidays.length });
+      
+      console.log(`Successfully inserted ${insertedCount} holidays for ${year}`);
+      res.json({ 
+        message: `Synced ${insertedCount} holidays for ${year}`, 
+        count: insertedCount 
+      });
+      
     } catch (error) {
       console.error("Holiday sync error:", error);
       res.status(500).json({ error: "Failed to sync holidays" });
@@ -734,7 +837,7 @@ async function startServer() {
 
       res.json(eventsWithGroups);
     } catch (error) {
-      console.error(error);
+      console.error("Failed to fetch events:", error);
       res.status(500).json({ error: "Failed to fetch events" });
     }
   });
@@ -795,7 +898,7 @@ async function startServer() {
       broadcast({ type: "EVENT_CREATED", payload: newEvent });
       res.status(201).json(newEvent);
     } catch (error) {
-      console.error(error);
+      console.error("Failed to create event:", error);
       res.status(500).json({ error: "Failed to create event" });
     }
   });
@@ -868,7 +971,7 @@ async function startServer() {
       broadcast({ type: "EVENT_UPDATED", payload: updatedEvent });
       res.json(updatedEvent);
     } catch (error) {
-      console.error(error);
+      console.error("Failed to update event:", error);
       res.status(500).json({ error: "Failed to update event" });
     }
   });
@@ -888,10 +991,12 @@ async function startServer() {
       }
 
       const deleteEventGroups = db.prepare("DELETE FROM event_groups WHERE eventId = ?");
+      const deleteComments = db.prepare("DELETE FROM comments WHERE eventId = ?");
       const deleteEvent = db.prepare("DELETE FROM events WHERE id = ?");
 
       const transaction = db.transaction(() => {
         deleteEventGroups.run(id);
+        deleteComments.run(id);
         deleteEvent.run(id);
       });
 
@@ -900,6 +1005,7 @@ async function startServer() {
       broadcast({ type: "EVENT_DELETED", payload: { id } });
       res.status(204).send();
     } catch (error) {
+      console.error("Failed to delete event:", error);
       res.status(500).json({ error: "Failed to delete event" });
     }
   });
@@ -917,6 +1023,7 @@ async function startServer() {
       `).all(id);
       res.json(comments);
     } catch (error) {
+      console.error("Failed to fetch comments:", error);
       res.status(500).json({ error: "Failed to fetch comments" });
     }
   });
@@ -950,6 +1057,7 @@ async function startServer() {
       broadcast({ type: "COMMENT_ADDED", payload: { eventId: id, comment: newComment, newCount } });
       res.status(201).json(newComment);
     } catch (error) {
+      console.error("Failed to add comment:", error);
       res.status(500).json({ error: "Failed to add comment" });
     }
   });
