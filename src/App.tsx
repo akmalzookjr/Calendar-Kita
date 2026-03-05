@@ -1705,23 +1705,30 @@ export default function App() {
     fetchEvents();
   }, [user]);
 
-  // Holiday Sync Logic
-  useEffect(() => {
-    if (!user) return;
+// Holiday Sync Logic - replace your existing useEffect with this
+useEffect(() => {
+  if (!user) return;
+  
+  const syncHolidays = async () => {
     const year = format(currentMonth, "yyyy");
-    const syncHolidays = async () => {
-      try {
-        const res = await fetch(`/api/holidays/sync/${year}`, { credentials: "include" });
-        const data = await res.json();
-        if (res.ok && data.count > 0) {
-          fetchEvents();
-        }
-      } catch (e) {
-        console.error("Failed to sync holidays", e);
+    try {
+      console.log(`Syncing holidays for ${year}...`);
+      const res = await fetch(`/api/holidays/sync/${year}`, { credentials: "include" });
+      const data = await res.json();
+      console.log(`Holiday sync response:`, data);
+      
+      if (res.ok) {
+        // Always fetch events after sync attempt, even if count is 0
+        // This ensures we get any existing holidays from the database
+        await fetchEvents();
       }
-    };
-    syncHolidays();
-  }, [currentMonth.getFullYear(), !!user]);
+    } catch (e) {
+      console.error("Failed to sync holidays", e);
+    }
+  };
+  
+  syncHolidays();
+}, [currentMonth.getFullYear(), !!user]); // Only depend on year change and user login
 
   // Update newEvent dates when selectedDate changes
   useEffect(() => {
