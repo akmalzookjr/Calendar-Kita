@@ -203,10 +203,121 @@ if (!adminUser) {
   db.prepare("INSERT OR IGNORE INTO user_groups (userId, groupId) VALUES (?, ?)").run(adminUser.id, "family-group-id");
 }
 
+// --- SYNC LOGIC ---
+async function syncFromSupabase() {
+  console.log("--- STARTING SYNC FROM SUPABASE ---");
+  try {
+    // Sync Users
+    const { data: users, error: usersError } = await supabase.from('users').select('*');
+    if (usersError) throw usersError;
+    if (users) {
+      const insertUser = db.prepare(`
+        INSERT OR REPLACE INTO users (id, username, name, password, bio, profileImage, themeColor, backgroundStyle, isAdmin, role, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      db.transaction(() => {
+        for (const user of users) {
+          insertUser.run(
+            user.id, user.username, user.name || null, user.password, user.bio || null, 
+            user.profileImage || null, user.themeColor || '#10b981', user.backgroundStyle || 'default', 
+            user.isAdmin ? 1 : 0, user.role || 'User', user.createdAt || new Date().toISOString(), user.updatedAt || new Date().toISOString()
+          );
+        }
+      })();
+      console.log(`Synced ${users.length} users`);
+    }
+
+    // Sync Groups
+    const { data: groups, error: groupsError } = await supabase.from('groups').select('*');
+    if (groupsError) throw groupsError;
+    if (groups) {
+      const insertGroup = db.prepare("INSERT OR REPLACE INTO groups (id, name, createdAt) VALUES (?, ?, ?)");
+      db.transaction(() => {
+        for (const group of groups) {
+          insertGroup.run(group.id, group.name, group.createdAt || new Date().toISOString());
+        }
+      })();
+      console.log(`Synced ${groups.length} groups`);
+    }
+
+    // Sync User Groups
+    const { data: userGroups, error: ugError } = await supabase.from('user_groups').select('*');
+    if (ugError) throw ugError;
+    if (userGroups) {
+      const insertUG = db.prepare("INSERT OR REPLACE INTO user_groups (userId, groupId) VALUES (?, ?)");
+      db.transaction(() => {
+        for (const ug of userGroups) {
+          insertUG.run(ug.userId, ug.groupId);
+        }
+      })();
+      console.log(`Synced ${userGroups.length} user_groups`);
+    }
+
+    // Sync Events
+    const { data: events, error: eventsError } = await supabase.from('events').select('*');
+    if (eventsError) throw eventsError;
+    if (events) {
+      const insertEvent = db.prepare(`
+        INSERT OR REPLACE INTO events (id, title, description, date, endDate, startTime, endTime, userId, userName, isShared, type, systemGenerated, readOnly, createdAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      db.transaction(() => {
+        for (const event of events) {
+          insertEvent.run(
+            event.id, event.title, event.description || null, event.date, event.endDate || null, 
+            event.startTime || null, event.endTime || null, event.userId, event.userName, 
+            event.isShared ? 1 : 0, event.type || 'event', event.systemGenerated ? 1 : 0, 
+            event.readOnly ? 1 : 0, event.createdAt || new Date().toISOString()
+          );
+        }
+      })();
+      console.log(`Synced ${events.length} events`);
+    }
+
+    // Sync Event Groups
+    const { data: eventGroups, error: egError } = await supabase.from('event_groups').select('*');
+    if (egError) throw egError;
+    if (eventGroups) {
+      const insertEG = db.prepare("INSERT OR REPLACE INTO event_groups (eventId, groupId) VALUES (?, ?)");
+      db.transaction(() => {
+        for (const eg of eventGroups) {
+          insertEG.run(eg.eventId, eg.groupId);
+        }
+      })();
+      console.log(`Synced ${eventGroups.length} event_groups`);
+    }
+
+    // Sync Comments
+    const { data: comments, error: commentsError } = await supabase.from('comments').select('*');
+    if (commentsError) throw commentsError;
+    if (comments) {
+      const insertComment = db.prepare(`
+        INSERT OR REPLACE INTO comments (id, eventId, userId, userName, text, createdAt)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      db.transaction(() => {
+        for (const comment of comments) {
+          insertComment.run(
+            comment.id, comment.eventId, comment.userId, comment.userName, comment.text, comment.createdAt || new Date().toISOString()
+          );
+        }
+      })();
+      console.log(`Synced ${comments.length} comments`);
+    }
+
+    console.log("--- SYNC FROM SUPABASE COMPLETED ---");
+  } catch (error) {
+    console.error("--- SYNC FROM SUPABASE FAILED ---", error);
+  }
+}
+
 async function startServer() {
   const app = express();
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server });
+
+  // Sync from Supabase on startup
+  await syncFromSupabase();
 
   const isProd = process.env.NODE_ENV === "production";
   console.log(`--- RUNNING IN ${isProd ? "PRODUCTION" : "DEVELOPMENT"} MODE ---`);
@@ -315,11 +426,8 @@ async function startServer() {
       db.prepare("INSERT INTO users (id, username, password) VALUES (?, ?, ?)").run(id, username, hashedPassword);
       
       // Supabase backup
-      try {
-        await supabase.from('users').insert([{ id, username, password: hashedPassword, isAdmin: false }]);
-      } catch (supabaseError) {
-        console.error("Supabase insert error:", supabaseError);
-      }
+      const { error: supabaseError } = await supabase.from('users').insert([{ id, username, password: hashedPassword, isAdmin: false }]);
+      if (supabaseError) console.error("Supabase registration error:", supabaseError);
       
       broadcast({
         type: "USER_REGISTERED",
@@ -478,6 +586,19 @@ async function startServer() {
         const query = `UPDATE users SET ${updates.join(", ")} WHERE id = ?`;
         params.push(userId);
         db.prepare(query).run(...params);
+
+        // Update Supabase
+        const supabaseUpdates: any = {};
+        if (name !== undefined) supabaseUpdates.name = name;
+        if (bio !== undefined) supabaseUpdates.bio = bio;
+        if (themeColor !== undefined) supabaseUpdates.themeColor = themeColor;
+        if (backgroundStyle !== undefined) supabaseUpdates.backgroundStyle = backgroundStyle;
+        if (password) supabaseUpdates.password = await bcrypt.hash(password, 10);
+        if (profileImage) supabaseUpdates.profileImage = profileImage;
+        supabaseUpdates.updatedAt = new Date().toISOString();
+
+        const { error: supabaseError } = await supabase.from('users').update(supabaseUpdates).eq('id', userId);
+        if (supabaseError) console.error("Supabase profile update error:", supabaseError);
       }
 
       const updatedUser = db.prepare(`
@@ -535,11 +656,13 @@ async function startServer() {
           return res.status(400).json({ error: "Username already exists" });
         }
         db.prepare("UPDATE users SET username = ? WHERE id = ?").run(username, userId);
+        await supabase.from('users').update({ username }).eq('id', userId);
       }
       
       if (password) {
         const hashedPassword = await bcrypt.hash(password, 10);
         db.prepare("UPDATE users SET password = ? WHERE id = ?").run(hashedPassword, userId);
+        await supabase.from('users').update({ password: hashedPassword }).eq('id', userId);
       }
       
       broadcast({ type: "USER_UPDATED", payload: { userId } });
@@ -550,7 +673,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/admin/users/:userId", authenticate, adminOnly, (req: any, res) => {
+  app.delete("/api/admin/users/:userId", authenticate, adminOnly, async (req: any, res) => {
     const { userId } = req.params;
     
     if (userId === "admin-id" || userId === req.user.id) {
@@ -572,6 +695,12 @@ async function startServer() {
 
       transaction();
 
+      // Supabase cleanup
+      await supabase.from('events').delete().eq('userId', userId);
+      await supabase.from('user_groups').delete().eq('userId', userId);
+      await supabase.from('comments').delete().eq('userId', userId);
+      await supabase.from('users').delete().eq('id', userId);
+
       broadcast({ type: "USER_DELETED", payload: { userId } });
       res.json({ success: true });
     } catch (error) {
@@ -590,7 +719,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/groups", authenticate, adminOnly, (req, res) => {
+  app.post("/api/admin/groups", authenticate, adminOnly, async (req, res) => {
     const { name } = req.body;
     if (!name || !name.trim()) {
       return res.status(400).json({ error: "Group name is required" });
@@ -600,6 +729,9 @@ async function startServer() {
       const id = crypto.randomUUID();
       db.prepare("INSERT INTO groups (id, name) VALUES (?, ?)").run(id, name.trim());
       
+      // Supabase
+      await supabase.from('groups').insert([{ id, name: name.trim() }]);
+
       const newGroup = { id, name: name.trim(), createdAt: new Date().toISOString() };
       broadcast({ type: "GROUP_CREATED", payload: newGroup });
       
@@ -610,7 +742,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/groups/:groupId/members", authenticate, adminOnly, (req, res) => {
+  app.post("/api/admin/groups/:groupId/members", authenticate, adminOnly, async (req, res) => {
     const { groupId } = req.params;
     const { userId, action } = req.body;
     
@@ -621,8 +753,10 @@ async function startServer() {
     try {
       if (action === 'add') {
         db.prepare("INSERT OR IGNORE INTO user_groups (userId, groupId) VALUES (?, ?)").run(userId, groupId);
+        await supabase.from('user_groups').insert([{ userId, groupId }]);
       } else {
         db.prepare("DELETE FROM user_groups WHERE userId = ? AND groupId = ?").run(userId, groupId);
+        await supabase.from('user_groups').delete().eq('userId', userId).eq('groupId', groupId);
       }
       broadcast({ type: "USER_UPDATED", payload: { userId } });
       res.json({ success: true });
@@ -632,7 +766,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/admin/groups/:groupId", authenticate, adminOnly, (req, res) => {
+  app.delete("/api/admin/groups/:groupId", authenticate, adminOnly, async (req, res) => {
     const { groupId } = req.params;
     try {
       // First delete event associations
@@ -643,6 +777,11 @@ async function startServer() {
       
       // Finally delete the group
       const result = db.prepare("DELETE FROM groups WHERE id = ?").run(groupId);
+
+      // Supabase
+      await supabase.from('event_groups').delete().eq('groupId', groupId);
+      await supabase.from('user_groups').delete().eq('groupId', groupId);
+      await supabase.from('groups').delete().eq('id', groupId);
       
       if (result.changes === 0) {
         return res.status(404).json({ error: "Group not found" });
@@ -730,7 +869,7 @@ async function startServer() {
           // Create a consistent ID
           const id = `holiday-${holiday.date}-${holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
           
-          const result = insertHoliday.run(
+          insertHoliday.run(
             id,
             holiday.localName,
             holiday.name,
@@ -743,14 +882,32 @@ async function startServer() {
             1,  // systemGenerated
             1   // readOnly
           );
-          
-          if (result.changes && result.changes > 0) {
-            insertedCount++;
-          }
         }
       });
 
       transaction();
+
+      // Supabase sync for holidays
+      const holidayInserts = holidays.map(holiday => {
+        const id = `holiday-${holiday.date}-${holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
+        return {
+          id,
+          title: holiday.localName,
+          description: holiday.name,
+          date: holiday.date,
+          endDate: holiday.date,
+          userId: 'system',
+          userName: 'System',
+          isShared: true,
+          type: 'public_holiday',
+          systemGenerated: true,
+          readOnly: true
+        };
+      });
+      await supabase.from('events').upsert(holidayInserts);
+      
+      const finalCount = db.prepare("SELECT COUNT(*) as count FROM events WHERE systemGenerated = 1 AND date LIKE ?").get(`${year}%`) as any;
+      insertedCount = finalCount ? finalCount.count : 0;
       
       console.log(`Inserted ${insertedCount} new holidays for ${year}`);
       res.json({ 
@@ -811,7 +968,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/events", authenticate, (req: any, res) => {
+  app.post("/api/events", authenticate, async (req: any, res) => {
     const { id, title, description, date, endDate, startTime, endTime, groupIds } = req.body;
     const userId = req.user.id;
     const userName = req.user.username;
@@ -850,6 +1007,17 @@ async function startServer() {
 
       transaction();
 
+      // Supabase
+      await supabase.from('events').insert([{
+        id, title, description, date: startDateStr, endDate: endDateStr, 
+        startTime: startTime || null, endTime: endTime || null, 
+        userId, userName, isShared: !!isShared
+      }]);
+      if (isShared) {
+        const egInserts = groupIds.map((gId: string) => ({ eventId: id, groupId: gId }));
+        await supabase.from('event_groups').insert(egInserts);
+      }
+
       const newEvent = { 
         id, 
         title, 
@@ -872,7 +1040,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/events/:id", authenticate, (req: any, res) => {
+  app.put("/api/events/:id", authenticate, async (req: any, res) => {
     const { id } = req.params;
     const { title, description, date, endDate, startTime, endTime, groupIds } = req.body;
     const userId = req.user.id;
@@ -921,6 +1089,18 @@ async function startServer() {
 
       transaction();
 
+      // Supabase
+      await supabase.from('events').update({
+        title, description, date: startDateStr, endDate: endDateStr,
+        startTime: startTime || null, endTime: endTime || null,
+        isShared: !!isShared
+      }).eq('id', id);
+      await supabase.from('event_groups').delete().eq('eventId', id);
+      if (isShared) {
+        const egInserts = groupIds.map((gId: string) => ({ eventId: id, groupId: gId }));
+        await supabase.from('event_groups').insert(egInserts);
+      }
+
       const commentCount = db.prepare("SELECT COUNT(*) as count FROM comments WHERE eventId = ?").get(id) as any;
 
       const updatedEvent = { 
@@ -945,7 +1125,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/events/:id", authenticate, (req: any, res) => {
+  app.delete("/api/events/:id", authenticate, async (req: any, res) => {
     const { id } = req.params;
     const userId = req.user.id;
 
@@ -970,6 +1150,11 @@ async function startServer() {
       });
 
       transaction();
+
+      // Supabase
+      await supabase.from('event_groups').delete().eq('eventId', id);
+      await supabase.from('comments').delete().eq('eventId', id);
+      await supabase.from('events').delete().eq('id', id);
 
       broadcast({ type: "EVENT_DELETED", payload: { id } });
       res.status(204).send();
@@ -997,7 +1182,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/events/:id/comments", authenticate, (req: any, res) => {
+  app.post("/api/events/:id/comments", authenticate, async (req: any, res) => {
     const { id } = req.params;
     const { text } = req.body;
     const userId = req.user.id;
@@ -1013,6 +1198,10 @@ async function startServer() {
         commentId, id, userId, userName, text
       );
       
+      // Supabase
+      await supabase.from('comments').insert([{
+        id: commentId, eventId: id, userId, userName, text
+      }]);
       const newComment = db.prepare(`
         SELECT c.id, c.eventId, c.userId, c.userName, c.text, strftime('%Y-%m-%dT%H:%M:%SZ', c.createdAt) as createdAt, u.profileImage 
         FROM comments c
@@ -1031,7 +1220,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/events/:eventId/comments/:commentId", authenticate, (req: any, res) => {
+  app.delete("/api/events/:eventId/comments/:commentId", authenticate, async (req: any, res) => {
     const { eventId, commentId } = req.params;
     const userId = req.user.id;
 
@@ -1047,6 +1236,8 @@ async function startServer() {
 
       db.prepare("DELETE FROM comments WHERE id = ?").run(commentId);
       
+      // Supabase
+      await supabase.from('comments').delete().eq('id', commentId);
       const countResult = db.prepare("SELECT COUNT(*) as count FROM comments WHERE eventId = ?").get(eventId) as any;
       const newCount = countResult ? countResult.count : 0;
 
