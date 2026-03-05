@@ -1,0 +1,67 @@
+[
+  {
+    "date": "2026-01-01",
+    "name": "New Year's Day",
+    "description": "New Year's Day"
+  },
+  {
+    "date": "2026-02-17",
+    "name": "Chinese New Year",
+    "description": "Chinese New Year"
+  },
+  {
+    "date": "2026-02-18",
+    "name": "Chinese New Year Holiday",
+    "description": "Second day of Chinese New Year"
+  },
+  {
+    "date": "2026-03-20",
+    "name": "Hari Raya Puasa",
+    "description": "Eid al-Fitr"
+  },
+  {
+    "date": "2026-03-21",
+    "name": "Hari Raya Puasa Day 2",
+    "description": "Second day of Eid al-Fitr"
+  },
+  {
+    "date": "2026-05-01",
+    "name": "Labour Day",
+    "description": "Labour Day"
+  },
+  {
+    "date": "2026-05-27",
+    "name": "Hari Raya Haji",
+    "description": "Eid al-Adha"
+  },
+  {
+    "date": "2026-06-01",
+    "name": "Agong's Birthday",
+    "description": "Yang di-Pertuan Agong's Birthday"
+  },
+  {
+    "date": "2026-06-17",
+    "name": "Awal Muharram",
+    "description": "Islamic New Year"
+  },
+  {
+    "date": "2026-08-31",
+    "name": "National Day",
+    "description": "Hari Merdeka"
+  },
+  {
+    "date": "2026-09-16",
+    "name": "Malaysia Day",
+    "description": "Malaysia Day"
+  },
+  {
+    "date": "2026-11-08",
+    "name": "Deepavali",
+    "description": "Deepavali"
+  },
+  {
+    "date": "2026-12-25",
+    "name": "Christmas Day",
+    "description": "Christmas Day"
+  }
+]
