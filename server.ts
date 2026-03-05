@@ -11,6 +11,8 @@ import jwt from "jsonwebtoken";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
 import cors from "cors";
+import multer from "multer";
+import Database from "better-sqlite3";
 
 // --- CLOUD CONFIG ---
 const SUPABASE_URL = 'https://vshmnnxcskpejlnnbveu.supabase.co';
@@ -21,23 +23,266 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const JWT_SECRET = process.env.JWT_SECRET || "family-sync-secret-key-123";
 
+// Ensure profile-images directory exists
+const profileImagesDir = path.join(__dirname, "profile-images");
+if (!fs.existsSync(profileImagesDir)) {
+  fs.mkdirSync(profileImagesDir, { recursive: true });
+}
+
+// Initialize SQLite database (keeping for local data)
+const db = new Database("family_calendar.db");
+
+// Initialize database tables
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
+    name TEXT,
+    password TEXT NOT NULL,
+    bio TEXT,
+    profileImage TEXT,
+    themeColor TEXT DEFAULT '#10b981',
+    isAdmin INTEGER DEFAULT 0,
+    role TEXT DEFAULT 'User',
+    createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS groups (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS user_groups (
+    userId TEXT,
+    groupId TEXT,
+    PRIMARY KEY (userId, groupId),
+    FOREIGN KEY(userId) REFERENCES users(id),
+    FOREIGN KEY(groupId) REFERENCES groups(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS events (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    date TEXT NOT NULL,
+    endDate TEXT,
+    startTime TEXT,
+    endTime TEXT,
+    userId TEXT NOT NULL,
+    userName TEXT NOT NULL,
+    isShared INTEGER DEFAULT 0,
+    type TEXT DEFAULT 'event',
+    systemGenerated INTEGER DEFAULT 0,
+    readOnly INTEGER DEFAULT 0,
+    createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(userId) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS comments (
+    id TEXT PRIMARY KEY,
+    eventId TEXT NOT NULL,
+    userId TEXT NOT NULL,
+    userName TEXT NOT NULL,
+    text TEXT NOT NULL,
+    createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(eventId) REFERENCES events(id) ON DELETE CASCADE,
+    FOREIGN KEY(userId) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS event_groups (
+    eventId TEXT,
+    groupId TEXT,
+    PRIMARY KEY (eventId, groupId),
+    FOREIGN KEY(eventId) REFERENCES events(id) ON DELETE CASCADE,
+    FOREIGN KEY(groupId) REFERENCES groups(id) ON DELETE CASCADE
+  );
+`);
+
+// Run migrations
+try {
+  const columnExists = (table: string, column: string) => {
+    try {
+      const info = db.prepare(`PRAGMA table_info(${table})`).all() as any[];
+      return info.some(c => c.name === column);
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const ensureColumn = (table: string, column: string, definition: string) => {
+    if (!columnExists(table, column)) {
+      try {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+        console.log(`Added column ${column} to ${table}`);
+      } catch (e) {
+        console.error(`Failed to add column ${column} to ${table}:`, e);
+      }
+    }
+  };
+
+  // Add new columns to users if they don't exist
+  ensureColumn('users', 'name', 'TEXT');
+  ensureColumn('users', 'bio', 'TEXT');
+  ensureColumn('users', 'profileImage', 'TEXT');
+  ensureColumn('users', 'role', "TEXT DEFAULT 'User'");
+  ensureColumn('users', 'themeColor', "TEXT DEFAULT '#10b981'");
+  ensureColumn('users', 'backgroundStyle', "TEXT DEFAULT 'default'");
+  ensureColumn('users', 'updatedAt', 'TEXT DEFAULT CURRENT_TIMESTAMP');
+
+  // Ensure 'system' user exists for foreign key constraints (holidays)
+  try {
+    const systemUser = db.prepare("SELECT * FROM users WHERE id = ? OR username = ?").get("system", "system");
+    if (!systemUser) {
+      db.prepare("INSERT INTO users (id, username, password, role, isAdmin) VALUES (?, ?, ?, ?, ?)").run(
+        "system", "system", "system-no-login", "System", 0
+      );
+    } else if (systemUser.id !== 'system') {
+      db.prepare("UPDATE users SET id = 'system' WHERE username = 'system'").run();
+    }
+  } catch (e) {
+    console.error("Failed to ensure system user:", e);
+  }
+
+  // Update existing admin role
+  db.prepare("UPDATE users SET role = 'Admin' WHERE isAdmin = 1").run();
+  db.prepare("UPDATE users SET role = 'User' WHERE isAdmin = 0 AND role IS NULL").run();
+
+  // Add columns to events if they don't exist
+  ensureColumn('events', 'startTime', 'TEXT');
+  ensureColumn('events', 'endTime', 'TEXT');
+  ensureColumn('events', 'type', "TEXT DEFAULT 'event'");
+  ensureColumn('events', 'systemGenerated', 'INTEGER DEFAULT 0');
+  ensureColumn('events', 'readOnly', 'INTEGER DEFAULT 0');
+  
+  // Migrate existing groupId from events to event_groups
+  if (columnExists('events', 'groupId')) {
+    const eventsWithGroup = db.prepare("SELECT id, groupId FROM events WHERE groupId IS NOT NULL").all() as any[];
+    for (const event of eventsWithGroup) {
+      db.prepare("INSERT OR IGNORE INTO event_groups (eventId, groupId) VALUES (?, ?)").run(event.id, event.groupId);
+    }
+  }
+} catch (e) {
+  console.error("Migration error:", e);
+}
+
+// Initial Migration: Create default "Family" group if no groups exist
+const groupCount = db.prepare("SELECT COUNT(*) as count FROM groups").get() as any;
+if (groupCount.count === 0) {
+  const familyGroupId = "family-group-id";
+  db.prepare("INSERT INTO groups (id, name) VALUES (?, ?)").run(familyGroupId, "Family");
+  
+  try {
+    const familyMembers = db.prepare("SELECT userId FROM family_members").all() as any[];
+    for (const member of familyMembers) {
+      db.prepare("INSERT OR IGNORE INTO user_groups (userId, groupId) VALUES (?, ?)").run(member.userId, familyGroupId);
+    }
+  } catch (e) {}
+
+  const sharedEvents = db.prepare("SELECT id FROM events WHERE isShared = 1").all() as any[];
+  for (const event of sharedEvents) {
+    db.prepare("INSERT OR IGNORE INTO event_groups (eventId, groupId) VALUES (?, ?)").run(event.id, familyGroupId);
+  }
+}
+
+// Create or update default admin
+const adminUser = db.prepare("SELECT * FROM users WHERE username = ?").get("admin") as any;
+const ADMIN_PASSWORD = "Akm@lc0m3l123";
+const hashedAdminPassword = bcrypt.hashSync(ADMIN_PASSWORD, 10);
+
+if (!adminUser) {
+  db.prepare("INSERT INTO users (id, username, password, isAdmin) VALUES (?, ?, ?, ?)").run(
+    "admin-id", "admin", hashedAdminPassword, 1
+  );
+  db.prepare("INSERT OR IGNORE INTO user_groups (userId, groupId) VALUES (?, ?)").run("admin-id", "family-group-id");
+} else {
+  db.prepare("UPDATE users SET password = ? WHERE username = ?").run(hashedAdminPassword, "admin");
+  db.prepare("INSERT OR IGNORE INTO user_groups (userId, groupId) VALUES (?, ?)").run(adminUser.id, "family-group-id");
+}
+
 async function startServer() {
   const app = express();
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server });
 
   const isProd = process.env.NODE_ENV === "production";
+  console.log(`--- RUNNING IN ${isProd ? "PRODUCTION" : "DEVELOPMENT"} MODE ---`);
 
   app.use(cors({ origin: true, credentials: true }));
   app.use(express.json());
   app.use(cookieParser());
+  app.use("/profile-images", express.static(profileImagesDir));
   
   app.use((req, res, next) => {
     res.setHeader('ngrok-skip-browser-warning', 'true');
     next();
   });
 
-  // --- Seed Admin Account ---
+  // Multer config for profile images
+  const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, profileImagesDir);
+    },
+    filename: (req, file, cb) => {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      cb(null, 'profile-' + uniqueSuffix + path.extname(file.originalname));
+    }
+  });
+
+  const upload = multer({
+    storage: storage,
+    limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
+    fileFilter: (req, file, cb) => {
+      const allowedTypes = /jpeg|jpg|png/;
+      const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+      const mimetype = allowedTypes.test(file.mimetype);
+      if (extname && mimetype) {
+        return cb(null, true);
+      }
+      cb(new Error("Only .png, .jpg and .jpeg format allowed!"));
+    }
+  });
+
+  // WebSocket handling
+  const clients = new Set<WebSocket>();
+  wss.on("connection", (ws) => {
+    clients.add(ws);
+    ws.on("close", () => clients.delete(ws));
+  });
+
+  const broadcast = (data: any) => {
+    const message = JSON.stringify(data);
+    clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    });
+  };
+
+  // Auth Middleware
+  const authenticate = (req: any, res: any, next: any) => {
+    if (!req.cookies) {
+      console.error("Cookie parser not initialized or cookies missing from request");
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const token = req.cookies.token;
+    if (!token) return res.status(401).json({ error: "Unauthorized" });
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as any;
+      req.user = decoded;
+      next();
+    } catch (e) {
+      res.status(401).json({ error: "Invalid token" });
+    }
+  };
+
+  const adminOnly = (req: any, res: any, next: any) => {
+    if (!req.user?.isAdmin) return res.status(403).json({ error: "Admin only" });
+    next();
+  };
+
+  // Seed Admin Account (Supabase backup)
   const seedAdmin = async () => {
     const hashed = bcrypt.hashSync("Akm@lc0m3l123", 10);
     const { data } = await supabase.from('users').select('*').eq('username', 'admin');
@@ -51,76 +296,720 @@ async function startServer() {
   };
   seedAdmin();
 
-  // --- Auth Middleware ---
-  const authenticate = (req: any, res: any, next: any) => {
-    const token = req.cookies.token;
-    if (!token) return res.status(401).json({ error: "Unauthorized" });
-    try {
-      req.user = jwt.verify(token, JWT_SECRET);
-      next();
-    } catch (e) { res.status(401).json({ error: "Invalid token" }); }
-  };
-
   // --- AUTH ROUTES ---
   app.post("/api/auth/register", async (req, res) => {
     const { username, password } = req.body;
     try {
-      const hashed = await bcrypt.hash(password, 10);
-      const { error } = await supabase.from('users').insert([{ id: crypto.randomUUID(), username, password: hashed, isAdmin: false }]);
-      if (error) throw error;
+      const id = Math.random().toString(36).substr(2, 9);
+      const hashedPassword = await bcrypt.hash(password, 10);
+      
+      // Local DB
+      db.prepare("INSERT INTO users (id, username, password) VALUES (?, ?, ?)").run(id, username, hashedPassword);
+      
+      // Supabase backup
+      try {
+        await supabase.from('users').insert([{ id, username, password: hashedPassword, isAdmin: false }]);
+      } catch (supabaseError) {
+        console.error("Supabase insert error:", supabaseError);
+      }
+      
+      broadcast({
+        type: "USER_REGISTERED",
+        payload: {
+          id,
+          username,
+          isAdmin: false,
+          groups: []
+        }
+      });
+
       res.status(201).json({ message: "User registered" });
     } catch (error: any) {
-      console.error("Register Error:", error.message);
-      res.status(400).json({ error: "Username exists or database error" });
+      if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+        return res.status(400).json({ error: "Username already exists" });
+      }
+      res.status(500).json({ error: "Registration failed" });
     }
   });
 
   app.post("/api/auth/login", async (req, res) => {
     const { username, password } = req.body;
     try {
-      const { data: user, error } = await supabase.from('users').select('*').eq('username', username).maybeSingle();
-      if (!user || error || !(await bcrypt.compare(password, user.password))) {
+      // Local DB login
+      const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as any;
+      if (!user || !(await bcrypt.compare(password, user.password))) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
+      
       const token = jwt.sign({ id: user.id, username: user.username, isAdmin: !!user.isAdmin }, JWT_SECRET);
-      res.cookie("token", token, { httpOnly: true, sameSite: 'none', secure: true, maxAge: 7 * 24 * 60 * 60 * 1000 });
-      res.json({ id: user.id, username: user.username, isAdmin: !!user.isAdmin });
-    } catch (error) { res.status(500).json({ error: "Login failed" }); }
+      res.cookie("token", token, { 
+        httpOnly: true, 
+        sameSite: 'none', 
+        secure: true,
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      });
+      
+      const groups = db.prepare(`
+        SELECT g.id, g.name 
+        FROM groups g
+        JOIN user_groups ug ON g.id = ug.groupId
+        WHERE ug.userId = ?
+      `).all(user.id);
+
+      const { password: _, ...userWithoutPassword } = user;
+
+      res.json({ 
+        ...userWithoutPassword,
+        isAdmin: !!user.isAdmin,
+        groups: groups
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Login failed" });
+    }
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    res.clearCookie("token", { 
+      httpOnly: true, 
+      sameSite: 'none', 
+      secure: true,
+      maxAge: 0
+    });
+    res.json({ message: "Logged out" });
   });
 
   app.get("/api/auth/me", authenticate, async (req: any, res) => {
     try {
-      const { data: user } = await supabase.from('users').select('*').eq('id', req.user.id).maybeSingle();
+      const userId = req.user.id;
+      const user = db.prepare(`
+        SELECT id, username, name, bio, profileImage, role, isAdmin, themeColor, backgroundStyle, 
+        strftime('%Y-%m-%dT%H:%M:%SZ', createdAt) as createdAt, 
+        strftime('%Y-%m-%dT%H:%M:%SZ', updatedAt) as updatedAt 
+        FROM users WHERE id = ?
+      `).get(userId) as any;
+      
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      user.isAdmin = !!user.isAdmin;
+
+      const groups = db.prepare(`
+        SELECT g.id, g.name 
+        FROM groups g
+        JOIN user_groups ug ON g.id = ug.groupId
+        WHERE ug.userId = ?
+      `).all(userId);
+      
+      res.json({ ...user, groups });
+    } catch (error: any) {
+      console.error("Auth me error details:", error);
+      res.status(500).json({ error: "Internal server error", details: error.message });
+    }
+  });
+
+  // --- PROFILE ROUTES ---
+  app.get("/api/profile", authenticate, (req: any, res) => {
+    const userId = req.user.id;
+    const user = db.prepare(`
+      SELECT id, username, name, bio, profileImage, role, themeColor, backgroundStyle, createdAt, updatedAt 
+      FROM users WHERE id = ?
+    `).get(userId) as any;
+    if (!user) return res.status(404).json({ error: "User not found" });
+    res.json(user);
+  });
+
+  app.put("/api/profile", authenticate, upload.single('profileImage'), async (req: any, res) => {
+    const userId = req.user.id;
+    const { name, bio, password, themeColor, backgroundStyle } = req.body;
+    const profileImage = req.file ? `/profile-images/${req.file.filename}` : undefined;
+
+    try {
+      const user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId) as any;
       if (!user) return res.status(404).json({ error: "User not found" });
-      res.json({ ...user, isAdmin: !!user.isAdmin });
-    } catch (e) { res.status(500).json({ error: "Server error" }); }
+
+      const updates: string[] = [];
+      const params: any[] = [];
+
+      if (name !== undefined) {
+        updates.push("name = ?");
+        params.push(name);
+      }
+      if (bio !== undefined) {
+        updates.push("bio = ?");
+        params.push(bio);
+      }
+      if (themeColor !== undefined) {
+        updates.push("themeColor = ?");
+        params.push(themeColor);
+      }
+      if (backgroundStyle !== undefined) {
+        updates.push("backgroundStyle = ?");
+        params.push(backgroundStyle);
+      }
+      if (password) {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        updates.push("password = ?");
+        params.push(hashedPassword);
+      }
+      if (profileImage) {
+        if (user.profileImage) {
+          const oldPath = path.join(__dirname, user.profileImage);
+          if (fs.existsSync(oldPath)) {
+            try { fs.unlinkSync(oldPath); } catch (e) {}
+          }
+        }
+        updates.push("profileImage = ?");
+        params.push(profileImage);
+      }
+
+      if (updates.length > 0) {
+        updates.push("updatedAt = CURRENT_TIMESTAMP");
+        const query = `UPDATE users SET ${updates.join(", ")} WHERE id = ?`;
+        params.push(userId);
+        db.prepare(query).run(...params);
+      }
+
+      const updatedUser = db.prepare(`
+        SELECT id, username, name, bio, profileImage, role, isAdmin, themeColor, backgroundStyle, 
+        strftime('%Y-%m-%dT%H:%M:%SZ', createdAt) as createdAt, 
+        strftime('%Y-%m-%dT%H:%M:%SZ', updatedAt) as updatedAt 
+        FROM users WHERE id = ?
+      `).get(userId) as any;
+      
+      if (updatedUser) {
+        updatedUser.isAdmin = !!updatedUser.isAdmin;
+        updatedUser.groups = db.prepare(`
+          SELECT g.id, g.name 
+          FROM groups g
+          JOIN user_groups ug ON g.id = ug.groupId
+          WHERE ug.userId = ?
+        `).all(userId);
+      }
+      
+      broadcast({ type: "USER_UPDATED", payload: { userId } });
+      res.json(updatedUser);
+    } catch (error) {
+      console.error("Profile update error:", error);
+      res.status(500).json({ error: "Failed to update profile" });
+    }
+  });
+
+  // --- ADMIN ROUTES ---
+  app.get("/api/admin/users", authenticate, adminOnly, (req, res) => {
+    const users = db.prepare(`SELECT id, username, isAdmin FROM users`).all() as any[];
+    const usersWithGroups = users.map(user => {
+      const groups = db.prepare(`
+        SELECT g.id, g.name 
+        FROM groups g
+        JOIN user_groups ug ON g.id = ug.groupId
+        WHERE ug.userId = ?
+      `).all(user.id);
+      return { ...user, groups };
+    });
+    res.json(usersWithGroups);
+  });
+
+  app.put("/api/admin/users/:userId", authenticate, adminOnly, async (req, res) => {
+    const { userId } = req.params;
+    const { username, password } = req.body;
+    try {
+      if (username) {
+        const existing = db.prepare("SELECT id FROM users WHERE username = ? AND id != ?").get(username, userId);
+        if (existing) {
+          return res.status(400).json({ error: "Username already exists" });
+        }
+        db.prepare("UPDATE users SET username = ? WHERE id = ?").run(username, userId);
+      }
+      
+      if (password) {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        db.prepare("UPDATE users SET password = ? WHERE id = ?").run(hashedPassword, userId);
+      }
+      
+      broadcast({ type: "USER_UPDATED", payload: { userId } });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to update user", error);
+      res.status(500).json({ error: "Failed to update user" });
+    }
+  });
+
+  app.delete("/api/admin/users/:userId", authenticate, adminOnly, (req: any, res) => {
+    const { userId } = req.params;
+    
+    if (userId === "admin-id" || userId === req.user.id) {
+      return res.status(403).json({ error: "Cannot delete this user" });
+    }
+
+    try {
+      const deleteEvents = db.prepare("DELETE FROM events WHERE userId = ?");
+      const deleteUserGroups = db.prepare("DELETE FROM user_groups WHERE userId = ?");
+      const deleteUser = db.prepare("DELETE FROM users WHERE id = ?");
+
+      const transaction = db.transaction(() => {
+        deleteEvents.run(userId);
+        deleteUserGroups.run(userId);
+        deleteUser.run(userId);
+      });
+
+      transaction();
+
+      broadcast({ type: "USER_DELETED", payload: { userId } });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to delete user", error);
+      res.status(500).json({ error: "Failed to delete user" });
+    }
+  });
+
+  app.get("/api/admin/groups", authenticate, adminOnly, (req, res) => {
+    const groups = db.prepare("SELECT id, name, strftime('%Y-%m-%dT%H:%M:%SZ', createdAt) as createdAt FROM groups").all();
+    res.json(groups);
+  });
+
+  app.post("/api/admin/groups", authenticate, adminOnly, (req, res) => {
+    const { name } = req.body;
+    try {
+      const id = Math.random().toString(36).substr(2, 9);
+      db.prepare("INSERT INTO groups (id, name) VALUES (?, ?)").run(id, name);
+      broadcast({ type: "GROUP_CREATED", payload: { id, name } });
+      res.status(201).json({ id, name });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create group" });
+    }
+  });
+
+  app.post("/api/admin/groups/:groupId/members", authenticate, adminOnly, (req, res) => {
+    const { groupId } = req.params;
+    const { userId, action } = req.body;
+    try {
+      if (action === 'add') {
+        db.prepare("INSERT OR IGNORE INTO user_groups (userId, groupId) VALUES (?, ?)").run(userId, groupId);
+      } else {
+        db.prepare("DELETE FROM user_groups WHERE userId = ? AND groupId = ?").run(userId, groupId);
+      }
+      broadcast({ type: "USER_UPDATED", payload: { userId } });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Operation failed" });
+    }
+  });
+
+  app.delete("/api/admin/groups/:groupId", authenticate, adminOnly, (req, res) => {
+    const { groupId } = req.params;
+    try {
+      const deleteEvents = db.prepare(`
+        DELETE FROM events 
+        WHERE id IN (SELECT eventId FROM event_groups WHERE groupId = ?)
+      `);
+      const deleteEventGroups = db.prepare("DELETE FROM event_groups WHERE groupId = ?");
+      const deleteUserGroups = db.prepare("DELETE FROM user_groups WHERE groupId = ?");
+      const deleteGroup = db.prepare("DELETE FROM groups WHERE id = ?");
+
+      const transaction = db.transaction(() => {
+        deleteEvents.run(groupId);
+        deleteEventGroups.run(groupId);
+        deleteUserGroups.run(groupId);
+        deleteGroup.run(groupId);
+      });
+
+      transaction();
+
+      broadcast({ type: "GROUP_DELETED", payload: { groupId } });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to delete group", error);
+      res.status(500).json({ error: "Failed to delete group" });
+    }
+  });
+
+  // --- HOLIDAY ROUTES ---
+  app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
+    const { year } = req.params;
+    try {
+      let holidays = [];
+      let apiSuccess = false;
+      try {
+        const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/MY`);
+        if (response.ok) {
+          const text = await response.text();
+          if (text && text.trim()) {
+            holidays = JSON.parse(text);
+            apiSuccess = true;
+          }
+        }
+      } catch (e) {
+        console.warn("Holiday API failed, using fallback");
+      }
+
+      if (!apiSuccess) {
+        if (year === "2026") {
+          holidays = [
+            { date: "2026-01-01", localName: "New Year's Day", name: "New Year's Day" },
+            { date: "2026-02-17", localName: "Chinese New Year", name: "Chinese New Year" },
+            { date: "2026-02-18", localName: "Chinese New Year Day 2", name: "Chinese New Year Day 2" },
+            { date: "2026-03-20", localName: "Hari Raya Puasa", name: "Eid al-Fitr" },
+            { date: "2026-03-21", localName: "Hari Raya Puasa Day 2", name: "Eid al-Fitr Day 2" },
+            { date: "2026-05-01", localName: "Labour Day", name: "Labour Day" },
+            { date: "2026-05-27", localName: "Hari Raya Haji", name: "Eid al-Adha" },
+            { date: "2026-08-31", localName: "National Day", name: "National Day" },
+            { date: "2026-09-16", localName: "Malaysia Day", name: "Malaysia Day" },
+            { date: "2026-12-25", localName: "Christmas Day", name: "Christmas Day" },
+          ];
+        }
+      }
+
+      const insertHoliday = db.prepare(`
+        INSERT OR IGNORE INTO events (id, title, description, date, endDate, userId, userName, isShared, type, systemGenerated, readOnly)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      const transaction = db.transaction(() => {
+        for (const holiday of holidays) {
+          const id = `holiday-${holiday.date}-${holiday.localName.replace(/\s+/g, '-').toLowerCase()}`;
+          insertHoliday.run(
+            id,
+            holiday.localName,
+            holiday.name,
+            holiday.date,
+            holiday.date,
+            'system',
+            'System',
+            1,
+            'public_holiday',
+            1,
+            1
+          );
+        }
+      });
+
+      transaction();
+      res.json({ message: `Synced ${holidays.length} holidays for ${year}`, count: holidays.length });
+    } catch (error) {
+      console.error("Holiday sync error:", error);
+      res.status(500).json({ error: "Failed to sync holidays" });
+    }
   });
 
   // --- EVENT ROUTES ---
-  app.get("/api/events", authenticate, async (req: any, res) => {
-    const { data: events } = await supabase.from('events').select('*').or(`userId.eq.${req.user.id},isShared.eq.true`);
-    res.json(events || []);
+  app.get("/api/events", authenticate, (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      
+      const userGroups = db.prepare("SELECT groupId FROM user_groups WHERE userId = ?").all(userId) as any[];
+      const groupIds = userGroups.map(ug => ug.groupId);
+
+      let events;
+      if (groupIds.length > 0) {
+        const placeholders = groupIds.map(() => "?").join(",");
+        events = db.prepare(`
+          SELECT DISTINCT e.*, strftime('%Y-%m-%dT%H:%M:%SZ', e.createdAt) as createdAt, 
+          (SELECT COUNT(*) FROM comments WHERE eventId = e.id) as commentCount 
+          FROM events e
+          LEFT JOIN event_groups eg ON e.id = eg.eventId
+          WHERE e.userId = ? OR eg.groupId IN (${placeholders}) OR e.type = 'public_holiday'
+          ORDER BY e.date ASC
+        `).all(userId, ...groupIds) as any[];
+      } else {
+        events = db.prepare(`
+          SELECT e.*, strftime('%Y-%m-%dT%H:%M:%SZ', e.createdAt) as createdAt, 
+          (SELECT COUNT(*) FROM comments WHERE eventId = e.id) as commentCount 
+          FROM events e 
+          WHERE e.userId = ? OR e.type = 'public_holiday' 
+          ORDER BY e.date ASC
+        `).all(userId) as any[];
+      }
+
+      const eventsWithGroups = events.map(event => {
+        const groups = db.prepare("SELECT groupId FROM event_groups WHERE eventId = ?").all(event.id) as any[];
+        return { 
+          ...event, 
+          isShared: !!event.isShared,
+          systemGenerated: !!event.systemGenerated,
+          readOnly: !!event.readOnly,
+          groupIds: groups.map(g => g.groupId) 
+        };
+      });
+
+      res.json(eventsWithGroups);
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: "Failed to fetch events" });
+    }
+  });
+
+  app.post("/api/events", authenticate, (req: any, res) => {
+    const { id, title, description, date, endDate, startTime, endTime, groupIds } = req.body;
+    const userId = req.user.id;
+    const userName = req.user.username;
+    
+    try {
+      if (groupIds && Array.isArray(groupIds)) {
+        for (const gId of groupIds) {
+          const isMember = db.prepare("SELECT 1 FROM user_groups WHERE userId = ? AND groupId = ?").get(userId, gId);
+          if (!isMember) {
+            return res.status(403).json({ error: `You are not a member of group ${gId}` });
+          }
+        }
+      }
+
+      const insertEvent = db.prepare(`
+        INSERT INTO events (id, title, description, date, endDate, startTime, endTime, userId, userName, isShared)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      
+      const insertEventGroup = db.prepare(`
+        INSERT INTO event_groups (eventId, groupId) VALUES (?, ?)
+      `);
+
+      const startDateStr = date.split('T')[0];
+      const endDateStr = (endDate || date).split('T')[0];
+      const isShared = groupIds && groupIds.length > 0;
+
+      const transaction = db.transaction(() => {
+        insertEvent.run(id, title, description, startDateStr, endDateStr, startTime || null, endTime || null, userId, userName, isShared ? 1 : 0);
+        if (isShared) {
+          for (const gId of groupIds) {
+            insertEventGroup.run(id, gId);
+          }
+        }
+      });
+
+      transaction();
+
+      const newEvent = { 
+        id, 
+        title, 
+        description, 
+        date: startDateStr, 
+        endDate: endDateStr, 
+        startTime, 
+        endTime, 
+        userId, 
+        userName, 
+        isShared, 
+        groupIds: groupIds || [],
+        commentCount: 0
+      };
+      broadcast({ type: "EVENT_CREATED", payload: newEvent });
+      res.status(201).json(newEvent);
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: "Failed to create event" });
+    }
+  });
+
+  app.put("/api/events/:id", authenticate, (req: any, res) => {
+    const { id } = req.params;
+    const { title, description, date, endDate, startTime, endTime, groupIds } = req.body;
+    const userId = req.user.id;
+
+    try {
+      const event = db.prepare("SELECT userId, userName, readOnly FROM events WHERE id = ?").get(id) as any;
+      if (!event || (event.userId !== userId && !req.user.isAdmin)) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      if (event.readOnly && !req.user.isAdmin) {
+        return res.status(403).json({ error: "This event is read-only" });
+      }
+
+      if (groupIds && Array.isArray(groupIds)) {
+        for (const gId of groupIds) {
+          const isMember = db.prepare("SELECT 1 FROM user_groups WHERE userId = ? AND groupId = ?").get(userId, gId);
+          if (!isMember && !req.user.isAdmin) {
+            return res.status(403).json({ error: `You are not a member of group ${gId}` });
+          }
+        }
+      }
+
+      const updateEvent = db.prepare(`
+        UPDATE events 
+        SET title = ?, description = ?, date = ?, endDate = ?, startTime = ?, endTime = ?, isShared = ?
+        WHERE id = ?
+      `);
+      
+      const deleteEventGroups = db.prepare("DELETE FROM event_groups WHERE eventId = ?");
+      const insertEventGroup = db.prepare("INSERT INTO event_groups (eventId, groupId) VALUES (?, ?)");
+
+      const startDateStr = date.split('T')[0];
+      const endDateStr = (endDate || date).split('T')[0];
+      const isShared = groupIds && groupIds.length > 0;
+
+      const transaction = db.transaction(() => {
+        updateEvent.run(title, description, startDateStr, endDateStr, startTime || null, endTime || null, isShared ? 1 : 0, id);
+        deleteEventGroups.run(id);
+        if (isShared) {
+          for (const gId of groupIds) {
+            insertEventGroup.run(id, gId);
+          }
+        }
+      });
+
+      transaction();
+
+      const commentCount = db.prepare("SELECT COUNT(*) as count FROM comments WHERE eventId = ?").get(id) as any;
+
+      const updatedEvent = { 
+        id, 
+        title, 
+        description, 
+        date: startDateStr, 
+        endDate: endDateStr, 
+        startTime,
+        endTime,
+        isShared, 
+        groupIds: groupIds || [],
+        userId: event.userId,
+        userName: event.userName,
+        commentCount: commentCount.count
+      };
+      broadcast({ type: "EVENT_UPDATED", payload: updatedEvent });
+      res.json(updatedEvent);
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: "Failed to update event" });
+    }
+  });
+
+  app.delete("/api/events/:id", authenticate, (req: any, res) => {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    try {
+      const event = db.prepare("SELECT userId, readOnly FROM events WHERE id = ?").get(id) as any;
+      if (!event || (event.userId !== userId && !req.user.isAdmin)) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      if (event.readOnly && !req.user.isAdmin) {
+        return res.status(403).json({ error: "This event is read-only" });
+      }
+
+      const deleteEventGroups = db.prepare("DELETE FROM event_groups WHERE eventId = ?");
+      const deleteEvent = db.prepare("DELETE FROM events WHERE id = ?");
+
+      const transaction = db.transaction(() => {
+        deleteEventGroups.run(id);
+        deleteEvent.run(id);
+      });
+
+      transaction();
+
+      broadcast({ type: "EVENT_DELETED", payload: { id } });
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete event" });
+    }
+  });
+
+  // --- COMMENT ROUTES ---
+  app.get("/api/events/:id/comments", authenticate, (req: any, res) => {
+    const { id } = req.params;
+    try {
+      const comments = db.prepare(`
+        SELECT c.id, c.eventId, c.userId, c.userName, c.text, strftime('%Y-%m-%dT%H:%M:%SZ', c.createdAt) as createdAt, u.profileImage 
+        FROM comments c
+        JOIN users u ON c.userId = u.id
+        WHERE c.eventId = ?
+        ORDER BY c.createdAt ASC
+      `).all(id);
+      res.json(comments);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch comments" });
+    }
+  });
+
+  app.post("/api/events/:id/comments", authenticate, (req: any, res) => {
+    const { id } = req.params;
+    const { text } = req.body;
+    const userId = req.user.id;
+    const userName = req.user.username;
+
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: "Comment text is required" });
+    }
+
+    try {
+      const commentId = crypto.randomUUID();
+      db.prepare("INSERT INTO comments (id, eventId, userId, userName, text) VALUES (?, ?, ?, ?, ?)").run(
+        commentId, id, userId, userName, text
+      );
+      
+      const newComment = db.prepare(`
+        SELECT c.id, c.eventId, c.userId, c.userName, c.text, strftime('%Y-%m-%dT%H:%M:%SZ', c.createdAt) as createdAt, u.profileImage 
+        FROM comments c
+        JOIN users u ON c.userId = u.id
+        WHERE c.id = ?
+      `).get(commentId);
+
+      const countResult = db.prepare("SELECT COUNT(*) as count FROM comments WHERE eventId = ?").get(id) as any;
+      const newCount = countResult ? countResult.count : 0;
+
+      broadcast({ type: "COMMENT_ADDED", payload: { eventId: id, comment: newComment, newCount } });
+      res.status(201).json(newComment);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to add comment" });
+    }
+  });
+
+  app.delete("/api/events/:eventId/comments/:commentId", authenticate, (req: any, res) => {
+    const { eventId, commentId } = req.params;
+    const userId = req.user.id;
+
+    try {
+      const comment = db.prepare("SELECT * FROM comments WHERE id = ?").get(commentId) as any;
+      if (!comment) {
+        return res.status(404).json({ error: "Comment not found" });
+      }
+
+      if (comment.userId !== userId && !req.user.isAdmin) {
+        return res.status(403).json({ error: "You can only delete your own comments" });
+      }
+
+      db.prepare("DELETE FROM comments WHERE id = ?").run(commentId);
+      
+      const countResult = db.prepare("SELECT COUNT(*) as count FROM comments WHERE eventId = ?").get(eventId) as any;
+      const newCount = countResult ? countResult.count : 0;
+
+      broadcast({ type: "COMMENT_DELETED", payload: { eventId, commentId, newCount } });
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete comment error:", error);
+      res.status(500).json({ error: "Failed to delete comment" });
+    }
   });
 
   // --- FRONTEND SERVING ---
   if (!isProd) {
-    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+
     app.use(express.static("public"));
     app.use(vite.middlewares);
+
     app.get("*", async (req, res, next) => {
+      const url = req.originalUrl;
       try {
         let template = fs.readFileSync(path.resolve(__dirname, "index.html"), "utf-8");
-        template = await vite.transformIndexHtml(req.originalUrl, template);
+        template = await vite.transformIndexHtml(url, template);
         res.status(200).set({ "Content-Type": "text/html" }).end(template);
-      } catch (e) { next(e); }
+      } catch (e) {
+        vite.ssrFixStacktrace(e as Error);
+        next(e);
+      }
     });
   } else {
     const distPath = path.resolve(__dirname, "dist");
     app.use(express.static(distPath));
-    app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
   }
 
-  // PORT casting to Number fixes TypeScript error
   const PORT = Number(process.env.PORT) || 3000;
   server.listen(PORT, "0.0.0.0", () => {
     console.log(`Server started on Port ${PORT}`);
