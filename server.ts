@@ -16,19 +16,30 @@ import Database from "better-sqlite3";
 import dotenv from 'dotenv';
 dotenv.config();
 
-// Add this debug helper after your imports
-async function debugSupabaseOperation(operation: string, promise: Promise<any>) {
-  console.log(`🔄 Starting Supabase ${operation}...`);
+// Debug helper for Supabase operations
+async function debugSupabase(operation: string, supabasePromise: Promise<any>) {
+  console.log(`   🔄 Supabase ${operation} - starting...`);
   try {
-    const result = await promise;
-    console.log(`✅ Supabase ${operation} successful:`, result);
-    return result;
+    const result = await supabasePromise;
+    if (result.error) {
+      console.error(`   ❌ Supabase ${operation} failed:`, {
+        code: result.error.code,
+        message: result.error.message,
+        details: result.error.details,
+        hint: result.error.hint,
+        status: result.status,
+        statusText: result.statusText
+      });
+      return { success: false, error: result.error };
+    } else {
+      console.log(`   ✅ Supabase ${operation} succeeded:`, result.data);
+      return { success: true, data: result.data };
+    }
   } catch (error) {
-    console.error(`❌ Supabase ${operation} failed:`, error);
-    throw error;
+    console.error(`   ❌ Supabase ${operation} exception:`, error);
+    return { success: false, error };
   }
 }
-
 // --- CLOUD CONFIG ---
 const SUPABASE_URL = 'https://vshmnnxcskpejlnnbveu.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZzaG1ubnhjc2twZWpsbm5idmV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2OTgzNzUsImV4cCI6MjA4ODI3NDM3NX0.hjfEaRV7F7EFmA-1OWVllra6Y3E6mLa5MSI0aWkX5z0';
