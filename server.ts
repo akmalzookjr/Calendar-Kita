@@ -826,206 +826,106 @@ async function startServer() {
     }
   });
 
-  // --- HOLIDAY ROUTES ---
-  app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
-    const { year } = req.params;
+  // --- HOLIDAY ROUTES (Google Calendar Version) ---
+app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
+  const { year } = req.params;
+  
+  // Validate year
+  const yearNum = parseInt(year);
+  if (isNaN(yearNum) || yearNum < 2020 || yearNum > 2030) {
+    return res.status(400).json({ error: "Invalid year" });
+  }
+
+  try {
+    // Get state preference from settings
+    const selectedStateSetting = db.prepare("SELECT value FROM settings WHERE key = ?").get("selectedState") as any;
+    const selectedState = selectedStateSetting ? selectedStateSetting.value : null;
+
+    // First, delete existing holidays for this year
+    const startDate = `${year}-01-01`;
+    const endDate = `${year}-12-31`;
     
-    // Validate year
-    const yearNum = parseInt(year);
-    if (isNaN(yearNum) || yearNum < 2020 || yearNum > 2030) {
-      return res.status(400).json({ error: "Invalid year" });
+    db.prepare(`
+      DELETE FROM events 
+      WHERE systemGenerated = 1 
+      AND type = 'public_holiday'
+      AND date >= ? AND date <= ?
+    `).run(startDate, endDate);
+
+    // Google's public holiday calendar for Malaysia
+    // Format: country.official#holiday@group.v.calendar.google.com
+    const calendarId = encodeURIComponent('en.malaysian.official#holiday@group.v.calendar.google.com');
+    
+    console.log(`Fetching holidays for ${year} from Google Calendar...`);
+    
+    const response = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?` +
+      `timeMin=${year}-01-01T00:00:00Z&` +
+      `timeMax=${year}-12-31T23:59:59Z&` +
+      `maxResults=100&` +
+      `singleEvents=true&` +
+      `orderBy=startTime`
+    );
+    
+    if (!response.ok) {
+      console.error("Google Calendar API failed:", await response.text());
+      return res.json({ message: "Could not fetch holidays", count: 0 });
+    }
+    
+    const data = await response.json();
+    
+    if (!data.items || data.items.length === 0) {
+      return res.json({ message: "No holidays found", count: 0 });
     }
 
-    try {
-      const countryCodeSetting = db.prepare("SELECT value FROM settings WHERE key = ?").get("holidayCountryCode") as any;
-      let countryCode = countryCodeSetting ? countryCodeSetting.value : "MY";
-      if (!countryCode || countryCode.trim().length === 0) {
-        countryCode = "MY";
-      }
+    console.log(`Found ${data.items.length} holidays from Google Calendar`);
 
-      // Get Calendarific API key from environment variable
-      const CALENDARIFIC_API_KEY = process.env.CALENDARIFIC_API_KEY;
-      
-      if (!CALENDARIFIC_API_KEY) {
-        console.error("CALENDARIFIC_API_KEY not found in environment variables");
-        return res.status(500).json({ 
-          message: "Calendarific API key not configured", 
-          count: 0 
-        });
-      }
+    // Insert holidays into database
+    const insertHoliday = db.prepare(`
+      INSERT INTO events 
+      (id, title, description, date, endDate, userId, userName, isShared, type, systemGenerated, readOnly) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
 
-      // First, delete ALL existing system-generated holidays for this year
-      // This ensures we start fresh
-      const startDate = `${year}-01-01`;
-      const endDate = `${year}-12-31`;
-      
-      // Delete from event_groups first (foreign key constraint)
-      db.prepare(`
-        DELETE FROM event_groups 
-        WHERE eventId IN (
-          SELECT id FROM events 
-          WHERE systemGenerated = 1 
-          AND type = 'public_holiday'
-          AND date >= ? 
-          AND date <= ?
-        )
-      `).run(startDate, endDate);
-
-      // Delete the holidays themselves
-      db.prepare(`
-        DELETE FROM events 
-        WHERE systemGenerated = 1 
-        AND type = 'public_holiday'
-        AND date >= ? 
-        AND date <= ?
-      `).run(startDate, endDate);
-
-      // Fetch from Calendarific API
-      let holidays = [];
+    let insertedCount = 0;
+    
+    data.items.forEach((event: any) => {
+      const date = event.start.date || event.start.dateTime.split('T')[0];
+      const safeName = event.summary.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().substring(0, 50);
+      const id = `holiday-${date}-${safeName}`;
       
       try {
-        console.log(`Fetching holidays for ${year} (${countryCode}) from Calendarific...`);
-        
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 8000);
-        
-        // Calendarific API endpoint
-        const response = await fetch(
-          `https://calendarific.com/api/v2/holidays?` + 
-          `api_key=${CALENDARIFIC_API_KEY}&` +
-          `country=${countryCode}&` +
-          `year=${year}`,
-          { signal: controller.signal }
+        insertHoliday.run(
+          id,
+          event.summary,
+          event.description || event.summary,
+          date,
+          date,
+          'system',
+          'System',
+          1,
+          'public_holiday',
+          1,
+          1
         );
-        
-        clearTimeout(timeout);
-        
-        if (!response.ok) {
-          throw new Error(`Calendarific API returned ${response.status}`);
-        }
-        
-        const data = await response.json();
-        
-        if (data.meta && data.meta.code === 200 && data.response && data.response.holidays) {
-          holidays = data.response.holidays.map((h: any) => ({
-            date: h.date.iso,
-            localName: h.name,
-            name: h.description || h.name,
-            type: h.type || ['Public Holiday']
-          }));
-          console.log(`Found ${holidays.length} holidays from Calendarific`);
-        } else {
-          console.error("Calendarific API returned unexpected response:", data);
-          return res.json({ 
-            message: "No holidays found from Calendarific", 
-            count: 0 
-          });
-        }
-        
-      } catch (error) {
-        console.error("Calendarific API failed:", error);
-        return res.json({ 
-          message: "Failed to fetch holidays from Calendarific", 
-          count: 0 
-        });
+        insertedCount++;
+      } catch (err) {
+        // Ignore duplicates
       }
+    });
 
-      if (holidays.length === 0) {
-        console.log(`No holidays found from Calendarific for ${year}`);
-        return res.json({ 
-          message: "No holidays found from Calendarific", 
-          count: 0 
-        });
-      }
-
-      // Filter to only include public holidays (not all types)
-      const publicHolidays = holidays.filter((h: any) => 
-        h.type.some((t: string) => 
-          t.toLowerCase().includes('public') || 
-          t.toLowerCase().includes('national') ||
-          t.toLowerCase().includes('federal')
-        )
-      );
-
-      const holidaysToInsert = publicHolidays.length > 0 ? publicHolidays : holidays;
-      
-      console.log(`Using ${holidaysToInsert.length} public holidays from Calendarific`);
-
-      // Insert holidays into database
-      const insertHoliday = db.prepare(`
-        INSERT INTO events 
-        (id, title, description, date, endDate, userId, userName, isShared, type, systemGenerated, readOnly) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      let insertedCount = 0;
-      const transaction = db.transaction(() => {
-        for (const holiday of holidaysToInsert) {
-          // Create a unique ID for each holiday
-          const safeName = holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().substring(0, 50);
-          const id = `holiday-${holiday.date}-${safeName}`;
-          
-          try {
-            insertHoliday.run(
-              id,
-              holiday.localName,
-              holiday.name || holiday.localName,
-              holiday.date,
-              holiday.date,
-              'system',
-              'System',
-              1,  // isShared
-              'public_holiday',
-              1,  // systemGenerated
-              1   // readOnly
-            );
-            insertedCount++;
-          } catch (err) {
-            // Ignore duplicate errors
-            if (!err.message.includes('UNIQUE')) {
-              console.error(`Failed to insert holiday ${holiday.localName}:`, err);
-            }
-          }
-        }
-      });
-
-      transaction();
-
-      // Also sync to Supabase (optional)
-      try {
-        const holidayInserts = holidaysToInsert.map(holiday => ({
-          id: `holiday-${holiday.date}-${holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().substring(0, 50)}`,
-          title: holiday.localName,
-          description: holiday.name || holiday.localName,
-          date: holiday.date,
-          endDate: holiday.date,
-          userId: 'system',
-          userName: 'System',
-          isShared: true,
-          type: 'public_holiday',
-          systemGenerated: true,
-          readOnly: true
-        }));
-        await supabase.from('events').upsert(holidayInserts);
-      } catch (supabaseError) {
-        console.error("Failed to sync holidays to Supabase:", supabaseError);
-      }
-      
-      console.log(`Synced ${insertedCount} holidays for ${year} from Calendarific`);
-      res.json({ 
-        message: `Synced ${insertedCount} holidays for ${year}`, 
-        count: insertedCount,
-        source: "Calendarific"
-      });
-      
-    } catch (error) {
-      console.error("Holiday sync error:", error);
-      res.json({ 
-        message: "Holiday sync failed", 
-        count: 0 
-      });
-    }
-  });
+    console.log(`Synced ${insertedCount} holidays for ${year}`);
+    res.json({ 
+      message: `Synced ${insertedCount} holidays`, 
+      count: insertedCount,
+      source: "Google Calendar"
+    });
+    
+  } catch (error) {
+    console.error("Holiday sync error:", error);
+    res.json({ message: "Holiday sync failed", count: 0 });
+  }
+});
 
   // --- EVENT ROUTES ---
   app.get("/api/events", authenticate, (req: any, res) => {
