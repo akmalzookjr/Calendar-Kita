@@ -1236,6 +1236,7 @@ export default function App() {
   const [isFetchingComments, setIsFetchingComments] = useState(false);
   const [newCommentText, setNewCommentText] = useState("");
   const [isPostingComment, setIsPostingComment] = useState(false);
+  const commentsEndRef = useRef<HTMLDivElement>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [searchQuery, setSearchQuery] = useState("");
   const [filterPerson, setFilterPerson] = useState("all");
@@ -1282,6 +1283,13 @@ export default function App() {
     }
     localStorage.setItem('darkMode', darkMode.toString());
   }, [darkMode]);
+
+  // Auto-scroll to bottom of comments
+  useEffect(() => {
+    if (commentsEndRef.current) {
+      commentsEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [comments]);
 
   const fetchEvents = async () => {
     if (!user) return;
@@ -1734,8 +1742,8 @@ useEffect(() => {
 
   const days = useMemo(() => {
     const start = startOfWeek(startOfMonth(currentMonth));
-    const end = endOfWeek(endOfMonth(currentMonth));
-    return eachDayOfInterval({ start, end });
+    // Always return 42 days (6 rows) to keep the calendar grid height static
+    return eachDayOfInterval({ start, end: addDays(start, 41) });
   }, [currentMonth]);
 
   const nextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
@@ -2045,13 +2053,16 @@ useEffect(() => {
             </motion.div>
           )}
 
-          <div className="bg-white dark:bg-stone-900 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800 overflow-hidden">
+          <div className="w-full bg-white dark:bg-stone-900 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800 overflow-hidden">
             {/* Calendar Header */}
-            <div className="flex items-center justify-between p-6 border-b border-stone-100 dark:border-stone-800">
-              <h2 className="text-xl font-semibold text-stone-800 dark:text-white">
-                {format(currentMonth, "MMMM yyyy")}
-              </h2>
-              <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-stone-100 dark:border-stone-800">
+              <div className="flex-1 min-w-0">
+                <h2 className="text-base sm:text-xl font-bold text-stone-800 dark:text-white leading-tight">
+                  <span className="block sm:inline">{format(currentMonth, "MMMM")}</span>
+                  <span className="block sm:inline sm:ml-2 text-stone-400 dark:text-stone-500 font-medium">{format(currentMonth, "yyyy")}</span>
+                </h2>
+              </div>
+              <div className="flex items-center gap-1 sm:gap-2 shrink-0 ml-2 sm:ml-4">
                 <button 
                   onClick={prevMonth}
                   className="p-2 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-xl transition-colors text-stone-600 dark:text-stone-400"
@@ -2078,7 +2089,7 @@ useEffect(() => {
             </div>
 
             {/* Calendar Grid */}
-            <div className="p-4 relative overflow-hidden">
+            <div className="p-4 relative overflow-hidden min-h-[320px]">
               <div className="grid grid-cols-7 mb-2">
                 {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
                   <div key={day} className="text-center text-xs font-bold text-stone-400 dark:text-stone-500 uppercase tracking-widest py-2">
@@ -2086,21 +2097,22 @@ useEffect(() => {
                   </div>
                 ))}
               </div>
-              <motion.div 
-                key={format(currentMonth, "yyyy-MM")}
-                initial={{ x: 20, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                exit={{ x: -20, opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                drag="x"
-                dragConstraints={{ left: 0, right: 0 }}
-                dragElastic={0.2}
-                onDragEnd={(e, info) => {
-                  if (info.offset.x > 100) prevMonth();
-                  else if (info.offset.x < -100) nextMonth();
-                }}
-                className="grid grid-cols-7 gap-1 cursor-grab active:cursor-grabbing"
-              >
+              <AnimatePresence mode="popLayout" initial={false}>
+                <motion.div 
+                  key={format(currentMonth, "yyyy-MM")}
+                  initial={{ x: 20, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  exit={{ x: -20, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  drag="x"
+                  dragConstraints={{ left: 0, right: 0 }}
+                  dragElastic={0.2}
+                  onDragEnd={(e, info) => {
+                    if (info.offset.x > 100) prevMonth();
+                    else if (info.offset.x < -100) nextMonth();
+                  }}
+                  className="grid grid-cols-7 gap-1 cursor-grab active:cursor-grabbing"
+                >
                 {days.map((day, idx) => {
                   const dayEvents = filteredEvents.filter(e => isEventOnDay(e, day));
                   const isSelected = isSameDay(day, selectedDate);
@@ -2112,7 +2124,7 @@ useEffect(() => {
                       onClick={() => setSelectedDate(day)}
                       onDoubleClick={() => handleDateDoubleClick(day)}
                       className={cn(
-                        "relative aspect-square p-2 rounded-2xl transition-all flex flex-col items-center justify-start group",
+                        "relative aspect-square p-1 sm:p-2 rounded-xl sm:rounded-2xl transition-all flex flex-col items-center justify-start group overflow-hidden",
                         !isCurrentMonth && "opacity-30",
                         isSelected ? "bg-brand text-white shadow-lg shadow-brand/20" : "hover:bg-stone-50 dark:hover:bg-stone-800",
                         isToday(day) && !isSelected && "bg-brand/10 dark:bg-brand/20 text-brand font-bold",
@@ -2120,18 +2132,18 @@ useEffect(() => {
                       )}
                     >
                       <span className={cn(
-                        "text-sm z-10",
+                        "text-xs sm:text-sm z-10 mt-0.5 sm:mt-0",
                         !isSelected && dayEvents.some(e => e.type === 'public_holiday') && "text-red-600 dark:text-red-400 font-semibold",
                         !isSelected && !isToday(day) && isCurrentMonth && "text-stone-900 dark:text-stone-100"
                       )}>
                         {format(day, "d")}
                       </span>
                       
-                      {/* Event Indicators */}
-                      <div className="mt-auto flex flex-wrap justify-center gap-1 max-w-full pb-1">
+                      {/* Event Indicators - Absolutely positioned to prevent resizing */}
+                      <div className="absolute bottom-1 sm:bottom-2 left-0 right-0 flex flex-wrap justify-center gap-0.5 sm:gap-1 px-1 pointer-events-none">
                         {dayEvents.some(e => (e.commentCount || 0) > 0) && (
                           <div className={cn(
-                            "absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-blue-500 shadow-sm",
+                            "absolute top-[-12px] sm:top-[-16px] right-1 w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-blue-500 shadow-sm",
                             isSelected && "bg-white"
                           )} />
                         )}
@@ -2139,13 +2151,13 @@ useEffect(() => {
                           <div 
                             key={i} 
                             className={cn(
-                              "w-2 h-2 rounded-full shadow-sm transition-transform group-hover:scale-110",
+                              "w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full shadow-sm transition-transform group-hover:scale-110",
                               isSelected ? "bg-white" : event.type === 'public_holiday' ? "bg-red-500" : event.isShared ? "bg-brand" : "bg-stone-400 dark:bg-stone-600"
                             )} 
                           />
                         ))}
                         {dayEvents.length > 3 && (
-                          <div className={cn("w-2 h-2 rounded-full flex items-center justify-center text-[6px] font-bold", isSelected ? "bg-white/40 text-white" : "bg-stone-200 dark:bg-stone-700 text-stone-500 dark:text-stone-400")}>
+                          <div className={cn("w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full flex items-center justify-center text-[5px] sm:text-[6px] font-bold", isSelected ? "bg-white/40 text-white" : "bg-stone-200 dark:bg-stone-700 text-stone-500 dark:text-stone-400")}>
                             +
                           </div>
                         )}
@@ -2154,8 +2166,9 @@ useEffect(() => {
                   );
                 })}
               </motion.div>
-            </div>
+            </AnimatePresence>
           </div>
+        </div>
         </div>
 
         {/* Sidebar / Details */}
