@@ -52,7 +52,6 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { GoogleGenAI, Type } from "@google/genai";
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -258,20 +257,19 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
     }
   };
 
-    const handleSyncHolidays = async () => {
+       const handleSyncHolidays = async () => {
     setIsSyncingHolidays(true);
     try {
       const year = new Date().getFullYear();
-      const countryCode = settings.holidayCountryCode || "MY";
       
       const res = await fetch(`/api/holidays/sync/${year}`, { credentials: "include" });
       const data = await res.json();
       
       if (res.ok) {
         if (data.count > 0) {
-          alert(`Successfully synced ${data.count} holidays from Calendarific!`);
+          alert(`Successfully synced ${data.count} holidays from Google Calendar!`);
         } else {
-          alert(`No holidays found for ${year} from Calendarific. ${data.message || ''}`);
+          alert(`No holidays found for ${year}. ${data.message || ''}`);
         }
         // Refresh events to show holidays
         window.location.reload();
