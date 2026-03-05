@@ -837,10 +837,6 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
   }
 
   try {
-    // Get state preference from settings
-    const selectedStateSetting = db.prepare("SELECT value FROM settings WHERE key = ?").get("selectedState") as any;
-    const selectedState = selectedStateSetting ? selectedStateSetting.value : null;
-
     // First, delete existing holidays for this year
     const startDate = `${year}-01-01`;
     const endDate = `${year}-12-31`;
@@ -852,33 +848,76 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
       AND date >= ? AND date <= ?
     `).run(startDate, endDate);
 
-    // Google's public holiday calendar for Malaysia
-    // Format: country.official#holiday@group.v.calendar.google.com
-    const calendarId = encodeURIComponent('en.malaysian.official#holiday@group.v.calendar.google.com');
+    // Try multiple Google Calendar IDs for Malaysia
+    const calendarIds = [
+      'en.malaysian.official#holiday@group.v.calendar.google.com',
+      'en.malaysia.official#holiday@group.v.calendar.google.com',
+      'malaysian.official#holiday@group.v.calendar.google.com',
+      'malaysia.official#holiday@group.v.calendar.google.com'
+    ];
     
-    console.log(`Fetching holidays for ${year} from Google Calendar...`);
+    let holidays = [];
+    let success = false;
     
-    const response = await fetch(
-      `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?` +
-      `timeMin=${year}-01-01T00:00:00Z&` +
-      `timeMax=${year}-12-31T23:59:59Z&` +
-      `maxResults=100&` +
-      `singleEvents=true&` +
-      `orderBy=startTime`
-    );
-    
-    if (!response.ok) {
-      console.error("Google Calendar API failed:", await response.text());
-      return res.json({ message: "Could not fetch holidays", count: 0 });
+    for (const calendarId of calendarIds) {
+      if (success) break;
+      
+      try {
+        const encodedId = encodeURIComponent(calendarId);
+        console.log(`Trying calendar: ${calendarId}`);
+        
+        const response = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/${encodedId}/events?` +
+          `timeMin=${year}-01-01T00:00:00Z&` +
+          `timeMax=${year}-12-31T23:59:59Z&` +
+          `maxResults=100&` +
+          `singleEvents=true&` +
+          `orderBy=startTime`
+        );
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.items && data.items.length > 0) {
+            holidays = data.items;
+            success = true;
+            console.log(`Success! Found ${holidays.length} holidays from ${calendarId}`);
+            break;
+          }
+        }
+      } catch (err) {
+        console.log(`Calendar ${calendarId} failed, trying next...`);
+      }
     }
     
-    const data = await response.json();
-    
-    if (!data.items || data.items.length === 0) {
-      return res.json({ message: "No holidays found", count: 0 });
+    if (!success || holidays.length === 0) {
+      // Fallback to hardcoded Malaysia holidays for 2026
+      if (year === "2026") {
+        console.log("Using fallback holiday data for 2026");
+        const fallbackHolidays = [
+          { date: "2026-01-01", name: "New Year's Day" },
+          { date: "2026-02-17", name: "Chinese New Year" },
+          { date: "2026-02-18", name: "Chinese New Year Holiday" },
+          { date: "2026-03-20", name: "Hari Raya Puasa" },
+          { date: "2026-03-21", name: "Hari Raya Puasa Day 2" },
+          { date: "2026-05-01", name: "Labour Day" },
+          { date: "2026-05-27", name: "Hari Raya Haji" },
+          { date: "2026-06-01", name: "Agong's Birthday" },
+          { date: "2026-06-17", name: "Awal Muharram" },
+          { date: "2026-08-31", name: "National Day" },
+          { date: "2026-09-16", name: "Malaysia Day" },
+          { date: "2026-11-08", name: "Deepavali" },
+          { date: "2026-12-25", name: "Christmas Day" }
+        ];
+        
+        holidays = fallbackHolidays.map(h => ({
+          summary: h.name,
+          description: h.name,
+          start: { date: h.date }
+        }));
+      } else {
+        return res.json({ message: "No holidays found from any source", count: 0 });
+      }
     }
-
-    console.log(`Found ${data.items.length} holidays from Google Calendar`);
 
     // Insert holidays into database
     const insertHoliday = db.prepare(`
@@ -889,16 +928,19 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
 
     let insertedCount = 0;
     
-    data.items.forEach((event: any) => {
-      const date = event.start.date || event.start.dateTime.split('T')[0];
-      const safeName = event.summary.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().substring(0, 50);
+    holidays.forEach((event: any) => {
+      const date = event.start.date || event.start.dateTime?.split('T')[0];
+      if (!date) return;
+      
+      const title = event.summary || event.name || "Public Holiday";
+      const safeName = title.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().substring(0, 50);
       const id = `holiday-${date}-${safeName}`;
       
       try {
         insertHoliday.run(
           id,
-          event.summary,
-          event.description || event.summary,
+          title,
+          event.description || title,
           date,
           date,
           'system',
@@ -911,6 +953,9 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
         insertedCount++;
       } catch (err) {
         // Ignore duplicates
+        if (!err.message.includes('UNIQUE')) {
+          console.error("Insert error:", err);
+        }
       }
     });
 
@@ -918,7 +963,7 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
     res.json({ 
       message: `Synced ${insertedCount} holidays`, 
       count: insertedCount,
-      source: "Google Calendar"
+      source: success ? "Google Calendar" : "Fallback"
     });
     
   } catch (error) {

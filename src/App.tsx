@@ -257,7 +257,7 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
     }
   };
 
-       const handleSyncHolidays = async () => {
+  const handleSyncHolidays = async () => {
     setIsSyncingHolidays(true);
     try {
       const year = new Date().getFullYear();
@@ -267,7 +267,7 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
       
       if (res.ok) {
         if (data.count > 0) {
-          alert(`Successfully synced ${data.count} holidays from Google Calendar!`);
+          alert(`Successfully synced ${data.count} holidays from ${data.source}!`);
         } else {
           alert(`No holidays found for ${year}. ${data.message || ''}`);
         }
