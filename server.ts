@@ -13,6 +13,8 @@ import crypto from "crypto";
 import cors from "cors";
 import multer from "multer";
 import Database from "better-sqlite3";
+import dotenv from 'dotenv';
+dotenv.config();
 
 // --- CLOUD CONFIG ---
 const SUPABASE_URL = 'https://vshmnnxcskpejlnnbveu.supabase.co';
@@ -841,71 +843,14 @@ async function startServer() {
         countryCode = "MY";
       }
 
-      // Fetch from API with timeout
-      let holidays = [];
-      try {
-        console.log(`Fetching holidays for ${year} (${countryCode}) from API...`);
-        
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 8000); // 8 second timeout
-        
-        const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/${countryCode}`, {
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeout);
-        
-        if (!response.ok) {
-          console.error(`API returned status ${response.status}`);
-          // If API fails, return empty array - we'll handle it gracefully
-          return res.json({ 
-            message: `No holidays found for ${year}`, 
-            count: 0 
-          });
-        }
-        
-        const text = await response.text();
-        if (!text || !text.trim()) {
-          console.warn(`Empty response from holiday API for ${year} (${countryCode})`);
-          return res.json({ 
-            message: `No holidays found for ${year}`, 
-            count: 0 
-          });
-        } else {
-          try {
-            holidays = JSON.parse(text);
-          } catch (parseError) {
-            console.error("Failed to parse holiday API response:", text);
-            return res.json({ 
-              message: `Failed to parse holiday data for ${year}`, 
-              count: 0 
-            });
-          }
-        }
-        
-        if (!Array.isArray(holidays)) {
-          console.warn("Holiday API did not return an array:", holidays);
-          return res.json({ 
-            message: `Invalid holiday data for ${year}`, 
-            count: 0 
-          });
-        }
-        
-        console.log(`Successfully fetched ${holidays.length} holidays from API`);
-        
-      } catch (error) {
-        console.error("Holiday API failed:", error);
-        // Return gracefully instead of error - this prevents the frontend from breaking
-        return res.json({ 
-          message: "Holiday API temporarily unavailable", 
+      // Get Calendarific API key from environment variable
+      const CALENDARIFIC_API_KEY = process.env.CALENDARIFIC_API_KEY;
+      
+      if (!CALENDARIFIC_API_KEY) {
+        console.error("CALENDARIFIC_API_KEY not found in environment variables");
+        return res.status(500).json({ 
+          message: "Calendarific API key not configured", 
           count: 0 
-        });
-      }
-
-      if (!holidays.length) {
-        return res.json({ 
-          message: "No holidays found for this year", 
-          count: 0
         });
       }
 
@@ -935,6 +880,77 @@ async function startServer() {
         AND date <= ?
       `).run(startDate, endDate);
 
+      // Fetch from Calendarific API
+      let holidays = [];
+      
+      try {
+        console.log(`Fetching holidays for ${year} (${countryCode}) from Calendarific...`);
+        
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        
+        // Calendarific API endpoint
+        const response = await fetch(
+          `https://calendarific.com/api/v2/holidays?` + 
+          `api_key=${CALENDARIFIC_API_KEY}&` +
+          `country=${countryCode}&` +
+          `year=${year}`,
+          { signal: controller.signal }
+        );
+        
+        clearTimeout(timeout);
+        
+        if (!response.ok) {
+          throw new Error(`Calendarific API returned ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.meta && data.meta.code === 200 && data.response && data.response.holidays) {
+          holidays = data.response.holidays.map((h: any) => ({
+            date: h.date.iso,
+            localName: h.name,
+            name: h.description || h.name,
+            type: h.type || ['Public Holiday']
+          }));
+          console.log(`Found ${holidays.length} holidays from Calendarific`);
+        } else {
+          console.error("Calendarific API returned unexpected response:", data);
+          return res.json({ 
+            message: "No holidays found from Calendarific", 
+            count: 0 
+          });
+        }
+        
+      } catch (error) {
+        console.error("Calendarific API failed:", error);
+        return res.json({ 
+          message: "Failed to fetch holidays from Calendarific", 
+          count: 0 
+        });
+      }
+
+      if (holidays.length === 0) {
+        console.log(`No holidays found from Calendarific for ${year}`);
+        return res.json({ 
+          message: "No holidays found from Calendarific", 
+          count: 0 
+        });
+      }
+
+      // Filter to only include public holidays (not all types)
+      const publicHolidays = holidays.filter((h: any) => 
+        h.type.some((t: string) => 
+          t.toLowerCase().includes('public') || 
+          t.toLowerCase().includes('national') ||
+          t.toLowerCase().includes('federal')
+        )
+      );
+
+      const holidaysToInsert = publicHolidays.length > 0 ? publicHolidays : holidays;
+      
+      console.log(`Using ${holidaysToInsert.length} public holidays from Calendarific`);
+
       // Insert holidays into database
       const insertHoliday = db.prepare(`
         INSERT INTO events 
@@ -944,9 +960,9 @@ async function startServer() {
 
       let insertedCount = 0;
       const transaction = db.transaction(() => {
-        for (const holiday of holidays) {
-          // Create a unique ID for each holiday (using date + name)
-          const safeName = holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+        for (const holiday of holidaysToInsert) {
+          // Create a unique ID for each holiday
+          const safeName = holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().substring(0, 50);
           const id = `holiday-${holiday.date}-${safeName}`;
           
           try {
@@ -965,7 +981,10 @@ async function startServer() {
             );
             insertedCount++;
           } catch (err) {
-            console.error(`Failed to insert holiday ${holiday.localName}:`, err);
+            // Ignore duplicate errors
+            if (!err.message.includes('UNIQUE')) {
+              console.error(`Failed to insert holiday ${holiday.localName}:`, err);
+            }
           }
         }
       });
@@ -974,8 +993,8 @@ async function startServer() {
 
       // Also sync to Supabase (optional)
       try {
-        const holidayInserts = holidays.map(holiday => ({
-          id: `holiday-${holiday.date}-${holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`,
+        const holidayInserts = holidaysToInsert.map(holiday => ({
+          id: `holiday-${holiday.date}-${holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().substring(0, 50)}`,
           title: holiday.localName,
           description: holiday.name || holiday.localName,
           date: holiday.date,
@@ -990,18 +1009,17 @@ async function startServer() {
         await supabase.from('events').upsert(holidayInserts);
       } catch (supabaseError) {
         console.error("Failed to sync holidays to Supabase:", supabaseError);
-        // Continue even if Supabase fails
       }
       
-      console.log(`Synced ${insertedCount} holidays for ${year} (${countryCode})`);
+      console.log(`Synced ${insertedCount} holidays for ${year} from Calendarific`);
       res.json({ 
         message: `Synced ${insertedCount} holidays for ${year}`, 
-        count: insertedCount 
+        count: insertedCount,
+        source: "Calendarific"
       });
       
     } catch (error) {
       console.error("Holiday sync error:", error);
-      // Return a graceful response instead of 500 error
       res.json({ 
         message: "Holiday sync failed", 
         count: 0 
