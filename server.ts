@@ -836,7 +836,10 @@ async function startServer() {
 
     try {
       const countryCodeSetting = db.prepare("SELECT value FROM settings WHERE key = ?").get("holidayCountryCode") as any;
-      const countryCode = countryCodeSetting ? countryCodeSetting.value : "MY";
+      let countryCode = countryCodeSetting ? countryCodeSetting.value : "MY";
+      if (!countryCode || countryCode.trim().length === 0) {
+        countryCode = "MY";
+      }
 
       // Fetch from API
       let holidays = [];
@@ -850,16 +853,31 @@ async function startServer() {
         
         const text = await response.text();
         if (!text || !text.trim()) {
-          throw new Error("Empty response from API");
+          console.warn(`Empty response from holiday API for ${year} (${countryCode})`);
+          holidays = [];
+        } else {
+          try {
+            holidays = JSON.parse(text);
+          } catch (parseError) {
+            console.error("Failed to parse holiday API response:", text);
+            throw new Error("Invalid JSON response from holiday API");
+          }
         }
         
-        holidays = JSON.parse(text);
+        if (!Array.isArray(holidays)) {
+          console.warn("Holiday API did not return an array:", holidays);
+          holidays = [];
+        }
+        
         console.log(`Successfully fetched ${holidays.length} holidays from API`);
         
       } catch (error) {
         console.error("Holiday API failed:", error);
-        return res.status(503).json({ 
-          error: "Holiday API is currently unavailable. Please try again later." 
+        // Return 0 count instead of error to allow frontend AI fallback
+        return res.json({ 
+          message: "External holiday API failed, please use AI fallback", 
+          count: 0,
+          apiError: true
         });
       }
 
@@ -943,6 +961,63 @@ async function startServer() {
     } catch (error) {
       console.error("Holiday sync error:", error);
       res.status(500).json({ error: "Failed to sync holidays" });
+    }
+  });
+
+  app.post("/api/holidays/import", authenticate, adminOnly, async (req: any, res) => {
+    const { holidays, year } = req.body;
+    if (!Array.isArray(holidays)) {
+      return res.status(400).json({ error: "Invalid holidays data" });
+    }
+
+    try {
+      const insertHoliday = db.prepare(`
+        INSERT OR REPLACE INTO events 
+        (id, title, description, date, endDate, userId, userName, isShared, type, systemGenerated, readOnly) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      const transaction = db.transaction(() => {
+        for (const holiday of holidays) {
+          const id = `holiday-${holiday.date}`;
+          insertHoliday.run(
+            id,
+            holiday.localName,
+            holiday.name,
+            holiday.date,
+            holiday.date,
+            'system',
+            'System',
+            1,
+            'public_holiday',
+            1,
+            1
+          );
+        }
+      });
+
+      transaction();
+
+      // Supabase sync
+      const holidayInserts = holidays.map(holiday => ({
+        id: `holiday-${holiday.date}`,
+        title: holiday.localName,
+        description: holiday.name,
+        date: holiday.date,
+        endDate: holiday.date,
+        userId: 'system',
+        userName: 'System',
+        isShared: true,
+        type: 'public_holiday',
+        systemGenerated: true,
+        readOnly: true
+      }));
+      await supabase.from('events').upsert(holidayInserts);
+
+      res.json({ message: `Successfully imported ${holidays.length} holidays`, count: holidays.length });
+    } catch (error) {
+      console.error("Holiday import error:", error);
+      res.status(500).json({ error: "Failed to import holidays" });
     }
   });
 
