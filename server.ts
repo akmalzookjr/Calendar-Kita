@@ -826,18 +826,12 @@ async function startServer() {
     }
   });
 
- // --- HOLIDAY ROUTES ---
+// --- HOLIDAY ROUTES ---
 app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
   const { year } = req.params;
   
-  // Validate year
-  const yearNum = parseInt(year);
-  if (isNaN(yearNum) || yearNum < 2020 || yearNum > 2030) {
-    return res.status(400).json({ error: "Invalid year" });
-  }
-
   try {
-    // First, delete existing holidays for this year
+    // First, delete existing holidays
     const startDate = `${year}-01-01`;
     const endDate = `${year}-12-31`;
     
@@ -848,25 +842,20 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
       AND date >= ? AND date <= ?
     `).run(startDate, endDate);
 
-    // Load holidays from JSON file
-    let holidays = [];
-    try {
-      const holidaysData = JSON.parse(
-        fs.readFileSync(path.join(__dirname, 'holidays-malaysia-2026.json'), 'utf8')
-      );
-      
-      // Filter for the requested year
-      holidays = holidaysData.filter(h => h.date.startsWith(year));
-      
-      console.log(`Loaded ${holidays.length} holidays from local file for ${year}`);
-    } catch (err) {
-      console.error("Failed to load holidays file:", err);
-      return res.json({ message: "Could not load holidays", count: 0 });
+    // Try Nager.Date API (this one definitely works for 2026)
+    const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/MY`);
+    
+    if (!response.ok) {
+      throw new Error(`API returned ${response.status}`);
+    }
+    
+    const holidays = await response.json();
+    
+    if (!holidays || holidays.length === 0) {
+      return res.json({ message: "No holidays found", count: 0 });
     }
 
-    if (holidays.length === 0) {
-      return res.json({ message: `No holidays found for ${year}`, count: 0 });
-    }
+    console.log(`Found ${holidays.length} holidays from Nager.Date API`);
 
     // Insert holidays into database
     const insertHoliday = db.prepare(`
@@ -878,14 +867,14 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
     let insertedCount = 0;
     
     holidays.forEach((holiday: any) => {
-      const safeName = holiday.name.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().substring(0, 50);
+      const safeName = holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().substring(0, 50);
       const id = `holiday-${holiday.date}-${safeName}`;
       
       try {
         insertHoliday.run(
           id,
-          holiday.name,
-          holiday.description || holiday.name,
+          holiday.localName,
+          holiday.name || holiday.localName,
           holiday.date,
           holiday.date,
           'system',
@@ -898,22 +887,18 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
         insertedCount++;
       } catch (err) {
         // Ignore duplicates
-        if (!err.message.includes('UNIQUE')) {
-          console.error("Insert error:", err);
-        }
       }
     });
 
-    console.log(`Synced ${insertedCount} holidays for ${year}`);
     res.json({ 
       message: `Synced ${insertedCount} holidays`, 
       count: insertedCount,
-      source: "Local Database"
+      source: "Nager.Date API"
     });
     
   } catch (error) {
     console.error("Holiday sync error:", error);
-    res.json({ message: "Holiday sync failed", count: 0 });
+    res.json({ message: "Could not fetch holidays", count: 0 });
   }
 });
 
