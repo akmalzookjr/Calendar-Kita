@@ -656,7 +656,7 @@ async function startServer() {
     }
   });
 
-    // --- HOLIDAY ROUTES ---
+  // --- HOLIDAY ROUTES ---
   app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
     const { year } = req.params;
     
@@ -667,111 +667,59 @@ async function startServer() {
     }
 
     try {
-      let holidays = [];
-      let apiSuccess = false;
-      
-      // Try to fetch from API
-      try {
-        console.log(`Fetching holidays for ${year} from API...`);
-        const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/MY`);
-        if (response.ok) {
-          const text = await response.text();
-          if (text && text.trim()) {
-            holidays = JSON.parse(text);
-            apiSuccess = true;
-            console.log(`Successfully fetched ${holidays.length} holidays from API`);
-          }
-        } else {
-          console.log(`API returned status ${response.status}`);
-        }
-      } catch (e) {
-        console.warn("Holiday API failed, using fallback:", e);
-      }
-
-      // Use fallback data if API failed
-      if (!apiSuccess) {
-        console.log(`Using fallback holiday data for ${year}`);
-        
-        // Malaysia public holidays for common years - REMOVED DUPLICATES
-        const fallbackHolidays: { [key: string]: any[] } = {
-          "2024": [
-            { date: "2024-01-01", localName: "New Year's Day", name: "New Year's Day" },
-            { date: "2024-02-10", localName: "Chinese New Year", name: "Chinese New Year" },
-            { date: "2024-02-11", localName: "Chinese New Year Day 2", name: "Chinese New Year Day 2" },
-            { date: "2024-03-23", localName: "Hari Raya Puasa", name: "Eid al-Fitr" },
-            { date: "2024-03-24", localName: "Hari Raya Puasa Day 2", name: "Eid al-Fitr Day 2" },
-            { date: "2024-05-01", localName: "Labour Day", name: "Labour Day" },
-            { date: "2024-06-03", localName: "Agong's Birthday", name: "Agong's Birthday" },
-            { date: "2024-06-17", localName: "Hari Raya Haji", name: "Eid al-Adha" },
-            { date: "2024-07-07", localName: "Islamic New Year", name: "Islamic New Year" },
-            { date: "2024-08-31", localName: "National Day", name: "National Day" },
-            { date: "2024-09-16", localName: "Malaysia Day", name: "Malaysia Day" },
-            { date: "2024-10-19", localName: "Deepavali", name: "Deepavali" },
-            { date: "2024-12-25", localName: "Christmas Day", name: "Christmas Day" },
-          ],
-          "2025": [
-            { date: "2025-01-01", localName: "New Year's Day", name: "New Year's Day" },
-            { date: "2025-01-29", localName: "Chinese New Year", name: "Chinese New Year" },
-            { date: "2025-01-30", localName: "Chinese New Year Day 2", name: "Chinese New Year Day 2" },
-            { date: "2025-03-31", localName: "Hari Raya Puasa", name: "Eid al-Fitr" },
-            { date: "2025-04-01", localName: "Hari Raya Puasa Day 2", name: "Eid al-Fitr Day 2" },
-            { date: "2025-05-01", localName: "Labour Day", name: "Labour Day" },
-            { date: "2025-06-02", localName: "Agong's Birthday", name: "Agong's Birthday" },
-            { date: "2025-06-07", localName: "Hari Raya Haji", name: "Eid al-Adha" },
-            { date: "2025-06-27", localName: "Islamic New Year", name: "Islamic New Year" },
-            { date: "2025-08-31", localName: "National Day", name: "National Day" },
-            { date: "2025-09-16", localName: "Malaysia Day", name: "Malaysia Day" },
-            { date: "2025-10-20", localName: "Deepavali", name: "Deepavali" },
-            { date: "2025-12-25", localName: "Christmas Day", name: "Christmas Day" },
-          ],
-          "2026": [
-            { date: "2026-01-01", localName: "New Year's Day", name: "New Year's Day" },
-            { date: "2026-02-17", localName: "Chinese New Year", name: "Chinese New Year" },
-            { date: "2026-02-18", localName: "Chinese New Year Day 2", name: "Chinese New Year Day 2" },
-            { date: "2026-03-20", localName: "Hari Raya Puasa", name: "Eid al-Fitr" },
-            { date: "2026-03-21", localName: "Hari Raya Puasa Day 2", name: "Eid al-Fitr Day 2" },
-            { date: "2026-05-01", localName: "Labour Day", name: "Labour Day" },
-            { date: "2026-05-27", localName: "Hari Raya Haji", name: "Eid al-Adha" },
-            { date: "2026-06-01", localName: "Agong's Birthday", name: "Agong's Birthday" },
-            { date: "2026-06-17", localName: "Islamic New Year", name: "Islamic New Year" },
-            { date: "2026-08-31", localName: "National Day", name: "National Day" },
-            { date: "2026-09-16", localName: "Malaysia Day", name: "Malaysia Day" },
-            { date: "2026-11-08", localName: "Deepavali", name: "Deepavali" },
-            { date: "2026-12-25", localName: "Christmas Day", name: "Christmas Day" },
-          ]
-        };
-        
-        holidays = fallbackHolidays[year] || fallbackHolidays["2026"];
-      }
-
-      // First, delete ALL existing system-generated holidays for this year to prevent duplicates
-      // This ensures we start fresh each time
+      // First, check if we already have holidays for this year
       const startDate = `${year}-01-01`;
       const endDate = `${year}-12-31`;
       
-      db.prepare(`
-        DELETE FROM events 
+      const existingHolidays = db.prepare(`
+        SELECT COUNT(*) as count FROM events 
         WHERE systemGenerated = 1 
         AND type = 'public_holiday'
         AND date >= ? 
         AND date <= ?
-      `).run(startDate, endDate);
+      `).get(startDate, endDate) as any;
 
-      // Also delete from event_groups for these events
-      db.prepare(`
-        DELETE FROM event_groups 
-        WHERE eventId IN (
-          SELECT id FROM events 
-          WHERE systemGenerated = 1 
-          AND type = 'public_holiday'
-          AND date >= ? 
-          AND date <= ?
-        )
-      `).run(startDate, endDate);
+      // If we already have holidays, don't fetch again
+      if (existingHolidays.count > 0) {
+        console.log(`Holidays for ${year} already exist (${existingHolidays.count} entries), skipping sync`);
+        return res.json({ 
+          message: `Holidays for ${year} already synced`, 
+          count: existingHolidays.count 
+        });
+      }
+
+      // Fetch from API
+      let holidays = [];
+      try {
+        console.log(`Fetching holidays for ${year} from API...`);
+        const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/MY`);
+        
+        if (!response.ok) {
+          throw new Error(`API returned ${response.status}`);
+        }
+        
+        const text = await response.text();
+        if (!text || !text.trim()) {
+          throw new Error("Empty response from API");
+        }
+        
+        holidays = JSON.parse(text);
+        console.log(`Successfully fetched ${holidays.length} holidays from API`);
+        
+      } catch (error) {
+        console.error("Holiday API failed:", error);
+        return res.status(503).json({ 
+          error: "Holiday API is currently unavailable. Please try again later." 
+        });
+      }
+
+      if (!holidays.length) {
+        return res.json({ message: "No holidays found for this year", count: 0 });
+      }
 
       // Insert holidays into database
       const insertHoliday = db.prepare(`
-        INSERT INTO events 
+        INSERT OR IGNORE INTO events 
         (id, title, description, date, endDate, userId, userName, isShared, type, systemGenerated, readOnly) 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
@@ -779,37 +727,32 @@ async function startServer() {
       let insertedCount = 0;
       const transaction = db.transaction(() => {
         for (const holiday of holidays) {
-          // Create a consistent ID based on date and name
-          const safeName = holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
-          const id = `holiday-${holiday.date}-${safeName}`;
+          // Create a consistent ID
+          const id = `holiday-${holiday.date}-${holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
           
-          try {
-            insertHoliday.run(
-              id,
-              holiday.localName,
-              holiday.name,
-              holiday.date,
-              holiday.date,
-              'system',
-              'System',
-              1,  // isShared
-              'public_holiday',
-              1,  // systemGenerated
-              1   // readOnly
-            );
+          const result = insertHoliday.run(
+            id,
+            holiday.localName,
+            holiday.name,
+            holiday.date,
+            holiday.date,
+            'system',
+            'System',
+            1,  // isShared
+            'public_holiday',
+            1,  // systemGenerated
+            1   // readOnly
+          );
+          
+          if (result.changes && result.changes > 0) {
             insertedCount++;
-          } catch (err) {
-            // If it's a unique constraint error, it's okay - holiday already exists
-            if (!err.message.includes('UNIQUE')) {
-              console.error(`Failed to insert holiday ${holiday.localName}:`, err);
-            }
           }
         }
       });
 
       transaction();
       
-      console.log(`Successfully synced ${insertedCount} holidays for ${year}`);
+      console.log(`Inserted ${insertedCount} new holidays for ${year}`);
       res.json({ 
         message: `Synced ${insertedCount} holidays for ${year}`, 
         count: insertedCount 

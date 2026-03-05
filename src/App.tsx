@@ -1555,21 +1555,21 @@ export default function App() {
   }, [user]);
 
   // Holiday Sync Logic
-  useEffect(() => {
-    if (!user) return;
-    const year = format(currentMonth, "yyyy");
-    const syncHolidays = async () => {
-      try {
-        const res = await fetch(`/api/holidays/sync/${year}`, { credentials: "include" });
-        if (res.ok) {
-          fetchEvents();
-        }
-      } catch (e) {
-        console.error("Failed to sync holidays", e);
+useEffect(() => {
+  if (!user) return;
+  const year = format(currentMonth, "yyyy");
+  const syncHolidays = async () => {
+    try {
+      const res = await fetch(`/api/holidays/sync/${year}`, { credentials: "include" });
+      if (res.ok) {
+        fetchEvents();
       }
-    };
-    syncHolidays();
-  }, [currentMonth.getFullYear(), !!user]);
+    } catch (e) {
+      console.error("Failed to sync holidays", e);
+    }
+  };
+  syncHolidays();
+}, [currentMonth.getFullYear(), !!user]);
 
   // Update newEvent dates when selectedDate changes
   useEffect(() => {
