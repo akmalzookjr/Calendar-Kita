@@ -210,13 +210,16 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
   const [newPassword, setNewPassword] = useState("");
   const [userToDelete, setUserToDelete] = useState<{ id: string, username: string } | null>(null);
   const [groupToDelete, setGroupToDelete] = useState<{ id: string, name: string } | null>(null);
+  const [settings, setSettings] = useState<Record<string, string>>({});
+  const [isSyncingHolidays, setIsSyncingHolidays] = useState(false);
 
   const fetchData = async (silent = false) => {
     if (!silent) setIsLoading(true);
     try {
-      const [usersRes, groupsRes] = await Promise.all([
+      const [usersRes, groupsRes, settingsRes] = await Promise.all([
         fetch("/api/admin/users", { credentials: "include" }),
-        fetch("/api/admin/groups", { credentials: "include" })
+        fetch("/api/admin/groups", { credentials: "include" }),
+        fetch("/api/settings", { credentials: "include" })
       ]);
       
       if (usersRes.status === 401) {
@@ -226,13 +229,50 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
 
       const usersData = await usersRes.json();
       const groupsData = await groupsRes.json();
+      const settingsData = await settingsRes.json();
 
       if (usersRes.ok && Array.isArray(usersData)) setUsers(usersData);
       if (groupsRes.ok && Array.isArray(groupsData)) setGroups(groupsData);
+      if (settingsRes.ok) setSettings(settingsData);
     } catch (e) {
       console.error("Failed to fetch admin data", e);
     } finally {
       if (!silent) setIsLoading(false);
+    }
+  };
+
+  const handleUpdateSetting = async (key: string, value: string) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, value }),
+        credentials: "include"
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, [key]: value }));
+      }
+    } catch (e) {
+      console.error("Failed to update setting", e);
+    }
+  };
+
+  const handleSyncHolidays = async () => {
+    setIsSyncingHolidays(true);
+    try {
+      const year = new Date().getFullYear();
+      const res = await fetch(`/api/holidays/sync/${year}`, { credentials: "include" });
+      const data = await res.json();
+      if (res.ok) {
+        alert(`Successfully synced ${data.count} holidays!`);
+      } else {
+        alert(`Sync failed: ${data.error || "Unknown error"}`);
+      }
+    } catch (e) {
+      console.error("Sync failed", e);
+      alert("Network error during holiday sync.");
+    } finally {
+      setIsSyncingHolidays(false);
     }
   };
 
@@ -511,6 +551,47 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* System Settings */}
+        <div className="bg-white dark:bg-stone-900 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800 overflow-hidden">
+          <div className="p-6 border-b border-stone-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/50">
+            <h2 className="text-xl font-semibold text-stone-800 dark:text-white">System Settings</h2>
+            <p className="text-sm text-stone-500 dark:text-stone-400">Global application configuration.</p>
+          </div>
+          <div className="p-6 space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-stone-50 dark:bg-stone-800/50 rounded-2xl border border-stone-100 dark:border-stone-800">
+              <div>
+                <h3 className="font-bold text-stone-800 dark:text-white">Holiday Country Code</h3>
+                <p className="text-xs text-stone-500 dark:text-stone-400">ISO 3166-1 alpha-2 code (e.g., MY, US, GB, ID).</p>
+              </div>
+              <div className="flex gap-2">
+                <input 
+                  type="text"
+                  maxLength={2}
+                  value={settings.holidayCountryCode || ""}
+                  onChange={(e) => handleUpdateSetting("holidayCountryCode", e.target.value.toUpperCase())}
+                  className="w-20 px-3 py-2 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-brand outline-none text-center font-bold uppercase"
+                  placeholder="MY"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-stone-50 dark:bg-stone-800/50 rounded-2xl border border-stone-100 dark:border-stone-800">
+              <div>
+                <h3 className="font-bold text-stone-800 dark:text-white">Manual Holiday Sync</h3>
+                <p className="text-xs text-stone-500 dark:text-stone-400">Force fetch latest holidays from the API for the current year.</p>
+              </div>
+              <button 
+                onClick={handleSyncHolidays}
+                disabled={isSyncingHolidays}
+                className="px-6 py-2.5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-xl font-bold text-sm hover:opacity-90 transition-all flex items-center gap-2 disabled:opacity-50"
+              >
+                {isSyncingHolidays ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Timer size={16} />}
+                {isSyncingHolidays ? "Syncing..." : "Sync Now"}
+              </button>
+            </div>
           </div>
         </div>
       </main>

@@ -34,6 +34,11 @@ const db = new Database("family_calendar.db");
 
 // Initialize database tables
 db.exec(`
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+  );
+
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     username TEXT UNIQUE NOT NULL,
@@ -202,6 +207,9 @@ if (!adminUser) {
   db.prepare("UPDATE users SET password = ? WHERE username = ?").run(hashedAdminPassword, "admin");
   db.prepare("INSERT OR IGNORE INTO user_groups (userId, groupId) VALUES (?, ?)").run(adminUser.id, "family-group-id");
 }
+
+// Ensure default settings
+db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)").run("holidayCountryCode", "MY");
 
 // --- SYNC LOGIC ---
 async function syncFromSupabase() {
@@ -795,6 +803,27 @@ async function startServer() {
     }
   });
 
+  // --- SETTINGS ROUTES ---
+  app.get("/api/settings", authenticate, adminOnly, (req, res) => {
+    try {
+      const settings = db.prepare("SELECT * FROM settings").all();
+      const settingsObj = (settings as any[]).reduce((acc, s) => ({ ...acc, [s.key]: s.value }), {});
+      res.json(settingsObj);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch settings" });
+    }
+  });
+
+  app.put("/api/settings", authenticate, adminOnly, (req, res) => {
+    const { key, value } = req.body;
+    try {
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, value);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update settings" });
+    }
+  });
+
   // --- HOLIDAY ROUTES ---
   app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
     const { year } = req.params;
@@ -806,32 +835,14 @@ async function startServer() {
     }
 
     try {
-      // First, check if we already have holidays for this year
-      const startDate = `${year}-01-01`;
-      const endDate = `${year}-12-31`;
-      
-      const existingHolidays = db.prepare(`
-        SELECT COUNT(*) as count FROM events 
-        WHERE systemGenerated = 1 
-        AND type = 'public_holiday'
-        AND date >= ? 
-        AND date <= ?
-      `).get(startDate, endDate) as any;
-
-      // If we already have holidays, don't fetch again
-      if (existingHolidays.count > 0) {
-        console.log(`Holidays for ${year} already exist (${existingHolidays.count} entries), skipping sync`);
-        return res.json({ 
-          message: `Holidays for ${year} already synced`, 
-          count: existingHolidays.count 
-        });
-      }
+      const countryCodeSetting = db.prepare("SELECT value FROM settings WHERE key = ?").get("holidayCountryCode") as any;
+      const countryCode = countryCodeSetting ? countryCodeSetting.value : "MY";
 
       // Fetch from API
       let holidays = [];
       try {
-        console.log(`Fetching holidays for ${year} from API...`);
-        const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/MY`);
+        console.log(`Fetching holidays for ${year} (${countryCode}) from API...`);
+        const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/${countryCode}`);
         
         if (!response.ok) {
           throw new Error(`API returned ${response.status}`);
@@ -856,18 +867,32 @@ async function startServer() {
         return res.json({ message: "No holidays found for this year", count: 0 });
       }
 
+      // Group holidays by date to prevent duplicates in a day
+      const holidaysByDate: Record<string, any> = {};
+      for (const h of holidays) {
+        if (!holidaysByDate[h.date]) {
+          holidaysByDate[h.date] = { ...h };
+        } else {
+          // Merge names if duplicate date
+          if (!holidaysByDate[h.date].localName.includes(h.localName)) {
+            holidaysByDate[h.date].localName += ` / ${h.localName}`;
+            holidaysByDate[h.date].name += ` / ${h.name}`;
+          }
+        }
+      }
+      const uniqueHolidays = Object.values(holidaysByDate);
+
       // Insert holidays into database
       const insertHoliday = db.prepare(`
-        INSERT OR IGNORE INTO events 
+        INSERT OR REPLACE INTO events 
         (id, title, description, date, endDate, userId, userName, isShared, type, systemGenerated, readOnly) 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
-      let insertedCount = 0;
       const transaction = db.transaction(() => {
-        for (const holiday of holidays) {
-          // Create a consistent ID
-          const id = `holiday-${holiday.date}-${holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
+        for (const holiday of uniqueHolidays) {
+          // Create a consistent ID based on date only to enforce one holiday entry per day
+          const id = `holiday-${holiday.date}`;
           
           insertHoliday.run(
             id,
@@ -888,8 +913,8 @@ async function startServer() {
       transaction();
 
       // Supabase sync for holidays
-      const holidayInserts = holidays.map(holiday => {
-        const id = `holiday-${holiday.date}-${holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
+      const holidayInserts = uniqueHolidays.map(holiday => {
+        const id = `holiday-${holiday.date}`;
         return {
           id,
           title: holiday.localName,
@@ -907,9 +932,9 @@ async function startServer() {
       await supabase.from('events').upsert(holidayInserts);
       
       const finalCount = db.prepare("SELECT COUNT(*) as count FROM events WHERE systemGenerated = 1 AND date LIKE ?").get(`${year}%`) as any;
-      insertedCount = finalCount ? finalCount.count : 0;
+      const insertedCount = finalCount ? finalCount.count : 0;
       
-      console.log(`Inserted ${insertedCount} new holidays for ${year}`);
+      console.log(`Synced ${insertedCount} holidays for ${year} (${countryCode})`);
       res.json({ 
         message: `Synced ${insertedCount} holidays for ${year}`, 
         count: insertedCount 
