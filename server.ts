@@ -634,27 +634,28 @@ async function startServer() {
       db.prepare(query).run(...params);
 
       // Update Supabase
-      const supabaseUpdates: any = {};
-      if (name !== undefined) supabaseUpdates.name = name;
-      if (bio !== undefined) supabaseUpdates.bio = bio;
-      if (themeColor !== undefined) supabaseUpdates.themeColor = themeColor;
-      if (backgroundStyle !== undefined) supabaseUpdates.backgroundStyle = backgroundStyle;
-      if (password) supabaseUpdates.password = await bcrypt.hash(password, 10);
-      if (profileImage) supabaseUpdates.profileImage = profileImage;
-      supabaseUpdates.updatedAt = new Date().toISOString();
+const supabaseUpdates: any = {};
+if (name !== undefined) supabaseUpdates.name = name;
+if (bio !== undefined) supabaseUpdates.bio = bio;
+if (themeColor !== undefined) supabaseUpdates["themeColor"] = themeColor; // Note the quotes!
+if (backgroundStyle !== undefined) supabaseUpdates["backgroundStyle"] = backgroundStyle;
+if (password) supabaseUpdates.password = await bcrypt.hash(password, 10);
+if (profileImage) supabaseUpdates["profileImage"] = profileImage;
+supabaseUpdates["updatedAt"] = new Date().toISOString();
 
-      console.log("Updating Supabase with:", supabaseUpdates);
-      
-      const { data, error } = await supabase
-        .from('users')
-        .update(supabaseUpdates)
-        .eq('id', userId);
-      
-      if (error) {
-        console.error("Supabase profile update error:", error);
-      } else {
-        console.log("Supabase update successful:", data);
-      }
+console.log("Updating Supabase with:", supabaseUpdates);
+
+const { data, error } = await supabase
+  .from('users')
+  .update(supabaseUpdates)
+  .eq('id', userId)
+  .select();
+
+if (error) {
+  console.error("❌ Supabase profile update error:", error);
+} else {
+  console.log("✅ Supabase update successful:", data);
+}
     }
 
     const updatedUser = db.prepare(`
