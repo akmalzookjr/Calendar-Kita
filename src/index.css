@@ -4,8 +4,17 @@
 
 @theme {
   --breakpoint-xs: 400px;
-  --color-brand: var(--brand-color, #10b981);
-  --color-brand-hover: var(--brand-color-hover, #059669);
+  --color-brand: var(--brand-color);
+  --color-brand-hover: var(--brand-color-hover);
+  --color-accent: var(--accent-color);
+  --color-accent-hover: var(--accent-color-hover);
+}
+
+:root {
+  --brand-color: #10b981;
+  --brand-color-hover: #059669;
+  --accent-color: #10b981;
+  --accent-color-hover: #059669;
 }
 
 @layer utilities {

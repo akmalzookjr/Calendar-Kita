@@ -151,7 +151,7 @@ function AuthView({ onLogin }: { onLogin: (user: UserProfile) => void }) {
           {error && (
             <div className={cn(
               "p-3 rounded-xl text-sm font-medium text-center",
-              error.includes("successful") ? "bg-brand/10 text-brand" : "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400"
+              error.includes("successful") ? "bg-accent/10 text-accent" : "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400"
             )}>
               {error}
             </div>
@@ -162,7 +162,7 @@ function AuthView({ onLogin }: { onLogin: (user: UserProfile) => void }) {
               type="text" 
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-brand focus:border-transparent outline-none transition-all"
+              className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-accent focus:border-transparent outline-none transition-all"
               placeholder="Enter username"
               required
             />
@@ -173,7 +173,7 @@ function AuthView({ onLogin }: { onLogin: (user: UserProfile) => void }) {
               type="password" 
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-brand focus:border-transparent outline-none transition-all"
+              className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-accent focus:border-transparent outline-none transition-all"
               placeholder="Enter password"
               required
             />
@@ -181,7 +181,7 @@ function AuthView({ onLogin }: { onLogin: (user: UserProfile) => void }) {
           <button 
             type="submit"
             disabled={isLoading}
-            className="w-full py-3 bg-brand text-white rounded-xl font-bold hover:bg-brand-hover disabled:opacity-50 transition-colors shadow-lg shadow-brand/20 flex items-center justify-center gap-2"
+            className="w-full py-3 bg-accent text-white rounded-xl font-bold hover:bg-accent-hover disabled:opacity-50 transition-colors shadow-lg shadow-accent/20 flex items-center justify-center gap-2"
           >
             {isLoading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : (isRegister ? "Register" : "Login")}
           </button>
@@ -409,8 +409,8 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
   };
 
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-stone-950 font-sans pb-20">
-      <header className="bg-white dark:bg-stone-900 border-b border-stone-200 dark:border-stone-800 px-6 py-4 sticky top-0 z-10">
+    <div className="min-h-screen bg-transparent font-sans pb-20">
+      <header className="bg-white/80 dark:bg-stone-900/80 backdrop-blur-md border-b border-stone-200 dark:border-stone-800 px-6 py-4 sticky top-0 z-10">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button onClick={onBack} className="p-2 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-xl transition-colors text-stone-400 dark:text-stone-500">
@@ -424,7 +424,7 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
       <main className="max-w-4xl mx-auto p-4 md:p-8 space-y-8">
         {/* Group Management */}
         <div className="bg-white dark:bg-stone-900 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800 overflow-hidden">
-          <div className="p-6 border-b border-stone-100 dark:border-stone-800 bg-brand/5 dark:bg-brand/10">
+          <div className="p-6 border-b border-stone-100 dark:border-stone-800 bg-accent/5 dark:bg-accent/10">
             <h2 className="text-xl font-semibold text-stone-800 dark:text-white">Calendar Groups</h2>
             <p className="text-sm text-stone-500 dark:text-stone-400 mb-4">Create groups like "Family", "Partner", or "Work".</p>
             
@@ -434,11 +434,11 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
                 placeholder="New Group Name (e.g. Partner)"
                 value={newGroupName}
                 onChange={(e) => setNewGroupName(e.target.value)}
-                className="flex-1 px-4 py-2 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-brand outline-none text-sm"
+                className="flex-1 px-4 py-2 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-accent outline-none text-sm"
               />
               <button 
                 onClick={handleCreateGroup}
-                className="px-6 py-2 bg-brand text-white rounded-xl font-bold text-sm hover:bg-brand-hover transition-colors shadow-lg shadow-brand/20 flex items-center gap-2"
+                className="px-6 py-2 bg-accent text-white rounded-xl font-bold text-sm hover:bg-accent-hover transition-colors shadow-lg shadow-accent/20 flex items-center gap-2"
               >
                 <Plus size={16} />
                 Create Group
@@ -452,7 +452,7 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
                 <div key={group.id} className="bg-stone-50 dark:bg-stone-800/50 rounded-2xl p-4 border border-stone-100 dark:border-stone-800">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
-                      <div className="p-2 bg-brand/10 text-brand rounded-lg">
+                      <div className="p-2 bg-accent/10 text-accent rounded-lg">
                         <Users size={18} />
                       </div>
                       <h3 className="font-bold text-stone-800 dark:text-white">{group.name}</h3>
@@ -481,7 +481,7 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
                             onClick={() => toggleGroupMember(u.id, group.id, isMember)}
                             className={cn(
                               "p-1.5 rounded-lg transition-all",
-                              isMember ? "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400" : "bg-brand/10 text-brand"
+                              isMember ? "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400" : "bg-accent/10 text-accent"
                             )}
                           >
                             {isMember ? <UserMinus size={14} /> : <UserPlus size={14} />}
@@ -506,7 +506,7 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
           <div className="divide-y divide-stone-100 dark:divide-stone-800">
             {isLoading ? (
               <div className="p-12 text-center">
-                <div className="w-8 h-8 border-4 border-brand border-t-transparent rounded-full animate-spin mx-auto" />
+                <div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin mx-auto" />
               </div>
             ) : users.map(u => (
               <div key={u.id} className="p-4 flex items-center justify-between hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors">
@@ -520,7 +520,7 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
                       <span className="px-1.5 py-0.5 bg-stone-100 dark:bg-stone-800 text-[9px] font-bold text-stone-500 dark:text-stone-400 uppercase rounded border border-stone-200 dark:border-stone-700">
                         {u.role || (u.isAdmin ? 'Admin' : 'User')}
                       </span>
-                      {u.isAdmin && <Shield size={12} className="text-brand" />}
+                      {u.isAdmin && <Shield size={12} className="text-accent" />}
                     </div>
                     <div className="flex flex-wrap gap-1 mt-1">
                       {u.groups.map(g => (
@@ -580,7 +580,7 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
                   maxLength={2}
                   value={settings.holidayCountryCode || ""}
                   onChange={(e) => handleUpdateSetting("holidayCountryCode", e.target.value.toUpperCase())}
-                  className="w-20 px-3 py-2 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-brand outline-none text-center font-bold uppercase"
+                  className="w-20 px-3 py-2 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-accent outline-none text-center font-bold uppercase"
                   placeholder="MY"
                 />
               </div>
@@ -592,10 +592,10 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
                 <p className="text-xs text-stone-500 dark:text-stone-400">Force fetch latest holidays from the API for the current year.</p>
               </div>
               <button 
-                onClick={handleSyncHolidays}
-                disabled={isSyncingHolidays}
-                className="px-6 py-2.5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-xl font-bold text-sm hover:opacity-90 transition-all flex items-center gap-2 disabled:opacity-50"
-              >
+              onClick={handleSyncHolidays}
+              disabled={isSyncingHolidays}
+              className="px-6 py-2.5 bg-accent text-white rounded-xl font-bold text-sm hover:opacity-90 transition-all flex items-center gap-2 disabled:opacity-50 shadow-lg shadow-accent/20"
+            >
                 {isSyncingHolidays ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Timer size={16} />}
                 {isSyncingHolidays ? "Syncing..." : "Sync Now"}
               </button>
@@ -638,7 +638,7 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
                     placeholder="New Username"
                     value={newUsername}
                     onChange={(e) => setNewUsername(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-brand outline-none transition-all"
+                    className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-accent outline-none transition-all"
                   />
                 </div>
                 <div>
@@ -648,7 +648,7 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
                     placeholder="Leave blank to keep current"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-brand outline-none transition-all"
+                    className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-accent outline-none transition-all"
                   />
                 </div>
               </div>
@@ -661,7 +661,7 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
                 </button>
                 <button 
                   onClick={handleUpdateUser}
-                  className="flex-1 py-3 bg-brand text-white rounded-xl font-bold text-sm hover:bg-brand-hover transition-colors shadow-lg shadow-brand/20"
+                  className="flex-1 py-3 bg-accent text-white rounded-xl font-bold text-sm hover:bg-accent-hover transition-colors shadow-lg shadow-accent/20"
                 >
                   Save
                 </button>
@@ -807,6 +807,7 @@ interface CalendarEvent {
   systemGenerated?: boolean;
   readOnly?: boolean;
   commentCount?: number;
+  profileImage?: string;
 }
 
 interface UserProfile {
@@ -821,6 +822,7 @@ interface UserProfile {
   createdAt?: string;
   updatedAt?: string;
   themeColor?: string;
+  accentColor?: string;
   backgroundStyle?: string;
 }
 
@@ -856,8 +858,8 @@ function MyPlansListView({
   }, [events, user.id, search, sortBy]);
 
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-stone-950 font-sans pb-20">
-      <header className="bg-white dark:bg-stone-900 border-b border-stone-200 dark:border-stone-800 px-6 py-4 sticky top-0 z-10">
+    <div className="min-h-screen bg-transparent font-sans pb-20">
+      <header className="bg-white/80 dark:bg-stone-900/80 backdrop-blur-md border-b border-stone-200 dark:border-stone-800 px-6 py-4 sticky top-0 z-10">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button onClick={onBack} className="p-2 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-xl transition-colors text-stone-400 dark:text-stone-500">
@@ -945,12 +947,19 @@ function MyPlansListView({
                 className="bg-white dark:bg-stone-900 p-5 rounded-3xl border border-stone-200 dark:border-stone-800 shadow-sm hover:border-brand/30 transition-all group"
               >
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 bg-brand/10 rounded-2xl flex flex-col items-center justify-center text-brand shrink-0 border border-brand/20">
-                      <span className="text-[10px] font-bold uppercase leading-none mb-1">{format(parseISO(event.date), "MMM")}</span>
-                      <span className="text-lg font-black leading-none">{format(parseISO(event.date), "d")}</span>
-                    </div>
-                    <div>
+                    <div className="flex items-center gap-4">
+                      <div className="relative">
+                        <div className="w-12 h-12 bg-brand/10 rounded-2xl flex flex-col items-center justify-center text-brand shrink-0 border border-brand/20">
+                          <span className="text-[10px] font-bold uppercase leading-none mb-1">{format(parseISO(event.date), "MMM")}</span>
+                          <span className="text-lg font-black leading-none">{format(parseISO(event.date), "d")}</span>
+                        </div>
+                        {event.profileImage && (
+                          <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full border-2 border-white dark:border-stone-900 overflow-hidden shadow-sm">
+                            <img src={event.profileImage} alt={event.userName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          </div>
+                        )}
+                      </div>
+                      <div>
                       <h3 className="font-bold text-stone-800 dark:text-white group-hover:text-brand transition-colors">{event.title}</h3>
                       <div className="flex flex-wrap items-center gap-3 mt-1">
                         <div className="flex items-center gap-1.5 text-xs text-stone-500 dark:text-stone-400">
@@ -1022,11 +1031,31 @@ function ProfileView({ user, onUpdate, onBack, darkMode, onToggleDarkMode }: { u
   const [bio, setBio] = useState(user.bio || "");
   const [password, setPassword] = useState("");
   const [themeColor, setThemeColor] = useState(user.themeColor || "#10b981");
+  const [accentColor, setAccentColor] = useState(user.accentColor || "#10b981");
   const [backgroundStyle, setBackgroundStyle] = useState(user.backgroundStyle || "default");
   const [imagePreview, setImagePreview] = useState<string | null>(user.profileImage || null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  useEffect(() => {
+    const darken = (hex: string, percent: number) => {
+      try {
+        const num = parseInt(hex.replace('#', ''), 16);
+        const amt = Math.round(2.55 * percent);
+        const R = (num >> 16) - amt;
+        const G = (num >> 8 & 0x00FF) - amt;
+        const B = (num & 0x0000FF) - amt;
+        return '#' + (0x1000000 + (R < 255 ? R < 0 ? 0 : R : 255) * 0x10000 + (G < 255 ? G < 0 ? 0 : G : 255) * 0x100 + (B < 255 ? B < 0 ? 0 : B : 255)).toString(16).slice(1);
+      } catch (e) { return hex; }
+    };
+
+    const root = document.documentElement;
+    root.style.setProperty('--brand-color', themeColor);
+    root.style.setProperty('--brand-color-hover', darken(themeColor, 15));
+    root.style.setProperty('--accent-color', accentColor);
+    root.style.setProperty('--accent-color-hover', darken(accentColor, 15));
+  }, [themeColor, accentColor]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1053,6 +1082,7 @@ function ProfileView({ user, onUpdate, onBack, darkMode, onToggleDarkMode }: { u
     formData.append('name', name);
     formData.append('bio', bio);
     formData.append('themeColor', themeColor);
+    formData.append('accentColor', accentColor);
     formData.append('backgroundStyle', backgroundStyle);
     if (password) formData.append('password', password);
     if (imageFile) formData.append('profileImage', imageFile);
@@ -1079,7 +1109,7 @@ function ProfileView({ user, onUpdate, onBack, darkMode, onToggleDarkMode }: { u
   };
 
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-stone-950 p-4 md:p-8 font-sans">
+    <div className="min-h-screen bg-transparent p-4 md:p-8 font-sans">
       <div className="max-w-2xl mx-auto">
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
@@ -1109,7 +1139,7 @@ function ProfileView({ user, onUpdate, onBack, darkMode, onToggleDarkMode }: { u
             {message && (
               <div className={cn(
                 "p-4 rounded-2xl text-sm font-medium flex items-center gap-3",
-                message.type === 'success' ? "bg-brand/10 text-brand border border-brand/20" : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-100 dark:border-red-800"
+                message.type === 'success' ? "bg-accent/10 text-accent border border-accent/20" : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-100 dark:border-red-800"
               )}>
                 {message.type === 'success' ? <Check size={18} /> : <AlertCircle size={18} />}
                 {message.text}
@@ -1125,7 +1155,7 @@ function ProfileView({ user, onUpdate, onBack, darkMode, onToggleDarkMode }: { u
                     <User size={64} className="text-stone-300 dark:text-stone-600" />
                   )}
                 </div>
-                <label className="absolute bottom-0 right-0 p-2 bg-brand text-white rounded-full shadow-lg cursor-pointer hover:bg-brand-hover transition-colors">
+                <label className="absolute bottom-0 right-0 p-2 bg-accent text-white rounded-full shadow-lg cursor-pointer hover:bg-accent-hover transition-colors">
                   <Camera size={20} />
                   <input type="file" className="hidden" accept="image/*" onChange={handleImageChange} />
                 </label>
@@ -1168,13 +1198,13 @@ function ProfileView({ user, onUpdate, onBack, darkMode, onToggleDarkMode }: { u
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
                 rows={3}
-                className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-brand focus:border-transparent outline-none transition-all resize-none"
+                className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-accent focus:border-transparent outline-none transition-all resize-none"
                 placeholder="Tell us about yourself..."
               />
             </div>
 
             <div className="space-y-4">
-              <label className="block text-xs font-bold text-stone-400 dark:text-stone-500 uppercase tracking-widest">Theme Color</label>
+              <label className="block text-xs font-bold text-stone-400 dark:text-stone-500 uppercase tracking-widest">Primary Theme Color</label>
               <div className="flex flex-wrap gap-3">
                 {[
                   { name: 'Emerald', color: '#10b981' },
@@ -1205,6 +1235,37 @@ function ProfileView({ user, onUpdate, onBack, darkMode, onToggleDarkMode }: { u
             </div>
 
             <div className="space-y-4">
+              <label className="block text-xs font-bold text-stone-400 dark:text-stone-500 uppercase tracking-widest">Button & Card Color (Accent)</label>
+              <div className="flex flex-wrap gap-3">
+                {[
+                  { name: 'Emerald', color: '#10b981' },
+                  { name: 'Blue', color: '#3b82f6' },
+                  { name: 'Violet', color: '#8b5cf6' },
+                  { name: 'Rose', color: '#f43f5e' },
+                  { name: 'Amber', color: '#f59e0b' },
+                  { name: 'Indigo', color: '#6366f1' },
+                  { name: 'Slate', color: '#475569' },
+                  { name: 'Orange', color: '#f97316' },
+                  { name: 'Cyan', color: '#06b6d4' },
+                ].map((c) => (
+                  <button
+                    key={c.color}
+                    type="button"
+                    onClick={() => setAccentColor(c.color)}
+                    className={cn(
+                      "w-10 h-10 rounded-full border-2 transition-all flex items-center justify-center shadow-sm",
+                      accentColor === c.color ? "border-stone-900 dark:border-white scale-110" : "border-transparent hover:scale-105"
+                    )}
+                    style={{ backgroundColor: c.color }}
+                    title={c.name}
+                  >
+                    {accentColor === c.color && <Check size={16} className="text-white" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
               <label className="block text-xs font-bold text-stone-400 dark:text-stone-500 uppercase tracking-widest">Background Style</label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
@@ -1220,11 +1281,11 @@ function ProfileView({ user, onUpdate, onBack, darkMode, onToggleDarkMode }: { u
                     className={cn(
                       "p-3 rounded-2xl border-2 transition-all text-left flex flex-col gap-1",
                       backgroundStyle === s.id 
-                        ? "border-brand bg-brand/5 ring-4 ring-brand/5" 
+                        ? "border-accent bg-accent/5 ring-4 ring-accent/5" 
                         : "border-stone-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/50 hover:border-stone-200 dark:hover:border-stone-700"
                     )}
                   >
-                    <span className={cn("text-xs font-bold", backgroundStyle === s.id ? "text-brand" : "text-stone-700 dark:text-stone-200")}>{s.name}</span>
+                    <span className={cn("text-xs font-bold", backgroundStyle === s.id ? "text-accent" : "text-stone-700 dark:text-stone-200")}>{s.name}</span>
                     <span className="text-[9px] text-stone-400 dark:text-stone-500 font-medium uppercase tracking-tighter">{s.desc}</span>
                   </button>
                 ))}
@@ -1238,7 +1299,7 @@ function ProfileView({ user, onUpdate, onBack, darkMode, onToggleDarkMode }: { u
                   type="password" 
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-brand focus:border-transparent outline-none transition-all"
+                  className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-accent focus:border-transparent outline-none transition-all"
                   placeholder="Leave blank to keep current"
                 />
                 <Lock size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-300 dark:text-stone-600" />
@@ -1250,7 +1311,7 @@ function ProfileView({ user, onUpdate, onBack, darkMode, onToggleDarkMode }: { u
               <button 
                 type="submit"
                 disabled={isSaving}
-                className="flex-1 py-4 bg-brand text-white rounded-2xl font-bold hover:bg-brand-hover disabled:opacity-50 transition-all shadow-lg shadow-brand/20 flex items-center justify-center gap-2"
+                className="flex-1 py-4 bg-accent text-white rounded-2xl font-bold hover:bg-accent-hover disabled:opacity-50 transition-all shadow-lg shadow-accent/20 flex items-center justify-center gap-2"
               >
                 {isSaving ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save size={20} />}
                 {isSaving ? "Saving Changes..." : "Save Profile"}
@@ -1313,6 +1374,29 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  useEffect(() => {
+    const darken = (hex: string, percent: number) => {
+      try {
+        const num = parseInt(hex.replace('#', ''), 16);
+        const amt = Math.round(2.55 * percent);
+        const R = (num >> 16) - amt;
+        const G = (num >> 8 & 0x00FF) - amt;
+        const B = (num & 0x0000FF) - amt;
+        return '#' + (0x1000000 + (R < 255 ? R < 0 ? 0 : R : 255) * 0x10000 + (G < 255 ? G < 0 ? 0 : G : 255) * 0x100 + (B < 255 ? B < 0 ? 0 : B : 255)).toString(16).slice(1);
+      } catch (e) { return hex; }
+    };
+
+    const root = document.documentElement;
+    const color = user?.themeColor || '#10b981';
+    const accent = user?.accentColor || '#10b981';
+    
+    root.style.setProperty('--brand-color', color);
+    root.style.setProperty('--brand-color-hover', darken(color, 15));
+    root.style.setProperty('--accent-color', accent);
+    root.style.setProperty('--accent-color-hover', darken(accent, 15));
+  }, [user?.themeColor, user?.accentColor]);
+
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [eventToDelete, setEventToDelete] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -1636,6 +1720,7 @@ useEffect(() => {
         if (data.payload.userId === user.id) {
           checkAuth();
         }
+        setEvents(prev => prev.map(e => e.userId === data.payload.userId ? { ...e, profileImage: data.payload.profileImage } : e));
       } else if (data.type === "USER_DELETED") {
         if (data.payload.userId === user.id) {
           handleLogout();
@@ -1877,46 +1962,57 @@ return matchesSearch && matchesPerson && matchesCategory;
   }, [events]);
 
   const themeStyles = useMemo(() => {
-  const color = user?.themeColor || '#10b981';
-  
-  // Simple hex darken helper
-  const darken = (hex: string, percent: number) => {
-    const num = parseInt(hex.replace('#', ''), 16);
-    const amt = Math.round(2.55 * percent);
-    const R = (num >> 16) - amt;
-    const G = (num >> 8 & 0x00FF) - amt;
-    const B = (num & 0x0000FF) - amt;
-    return '#' + (0x1000000 + (R < 255 ? R < 0 ? 0 : R : 255) * 0x10000 + (G < 255 ? G < 0 ? 0 : G : 255) * 0x100 + (B < 255 ? B < 0 ? 0 : B : 255)).toString(16).slice(1);
-  };
+    const color = user?.themeColor || '#10b981';
+    const accent = user?.accentColor || '#10b981';
+    
+    // Simple hex darken helper
+    const darken = (hex: string, percent: number) => {
+      try {
+        const num = parseInt(hex.replace('#', ''), 16);
+        const amt = Math.round(2.55 * percent);
+        const R = (num >> 16) - amt;
+        const G = (num >> 8 & 0x00FF) - amt;
+        const B = (num & 0x0000FF) - amt;
+        return '#' + (0x1000000 + (R < 255 ? R < 0 ? 0 : R : 255) * 0x10000 + (G < 255 ? G < 0 ? 0 : G : 255) * 0x100 + (B < 255 ? B < 0 ? 0 : B : 255)).toString(16).slice(1);
+      } catch (e) {
+        return hex;
+      }
+    };
 
-  return {
-    '--brand-color': color,
-    '--brand-color-hover': darken(color, 15),
-  } as React.CSSProperties;
-}, [user?.themeColor]);
+    return {
+      '--brand-color': color,
+      '--brand-color-hover': darken(color, 15),
+      '--accent-color': accent,
+      '--accent-color-hover': darken(accent, 15),
+    } as React.CSSProperties;
+  }, [user?.themeColor, user?.accentColor]);
 
-const backgroundClasses = useMemo(() => {
-  const style = user?.backgroundStyle || 'default';
-  if (darkMode) {
-    switch (style) {
-      case 'soft': return 'bg-stone-950 bg-gradient-to-br from-stone-950 via-stone-900 to-brand/10';
-      case 'glass': return 'bg-stone-950 bg-[radial-gradient(circle_at_top_right,var(--brand-color),transparent_40%),radial-gradient(circle_at_bottom_left,var(--brand-color),transparent_40%)] bg-opacity-20';
-      case 'vibrant': return 'bg-stone-950 bg-gradient-to-br from-brand/20 via-stone-950 to-brand/30';
-      default: return 'bg-stone-950';
+  const backgroundStyles = useMemo(() => {
+    const style = user?.backgroundStyle || 'default';
+    const color = user?.themeColor || '#10b981';
+    
+    if (style === 'default') return {};
+
+    if (darkMode) {
+      switch (style) {
+        case 'soft': return { background: `linear-gradient(to bottom right, #0c0a09, #1c1917, ${color}1a)` };
+        case 'glass': return { background: `radial-gradient(circle at top right, ${color}33, transparent 40%), radial-gradient(circle at bottom left, ${color}33, transparent 40%), #0c0a09` };
+        case 'vibrant': return { background: `linear-gradient(to bottom right, ${color}33, #0c0a09, ${color}4d)` };
+        default: return {};
+      }
+    } else {
+      switch (style) {
+        case 'soft': return { background: `linear-gradient(to bottom right, #fafaf9, #ffffff, ${color}0d)` };
+        case 'glass': return { background: `radial-gradient(circle at top right, ${color}1a, transparent 20%), radial-gradient(circle at bottom left, ${color}1a, transparent 20%), #fafaf9` };
+        case 'vibrant': return { background: `linear-gradient(to bottom right, ${color}1a, #fafaf9, ${color}33)` };
+        default: return {};
+      }
     }
-  } else {
-    switch (style) {
-      case 'soft': return 'bg-stone-50 bg-gradient-to-br from-stone-50 via-white to-brand/5';
-      case 'glass': return 'bg-stone-50 bg-[radial-gradient(circle_at_top_right,var(--brand-color),transparent_20%),radial-gradient(circle_at_bottom_left,var(--brand-color),transparent_20%)] bg-opacity-10';
-      case 'vibrant': return 'bg-stone-50 bg-gradient-to-br from-brand/10 via-stone-50 to-brand/20';
-      default: return 'bg-stone-50';
-    }
-  }
-}, [user?.backgroundStyle, darkMode, user?.themeColor]);
+  }, [user?.backgroundStyle, darkMode, user?.themeColor]);
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-stone-50 flex items-center justify-center" style={themeStyles}>
+      <div className="min-h-screen bg-stone-50 dark:bg-stone-950 flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-brand border-t-transparent rounded-full animate-spin" />
       </div>
     );
@@ -1924,14 +2020,14 @@ const backgroundClasses = useMemo(() => {
 
   if (!user) {
     return (
-      <div style={themeStyles}>
+      <div>
         <AuthView onLogin={setUser} />
       </div>
     );
   }
 
   return (
-    <div className={cn("min-h-screen font-sans transition-all duration-500", darkMode && "dark", backgroundClasses)} style={themeStyles}>
+    <div className={cn("min-h-screen font-sans transition-all duration-500", darkMode && "dark", !user?.backgroundStyle || user.backgroundStyle === 'default' ? (darkMode ? "bg-stone-950" : "bg-stone-50") : "")} style={backgroundStyles}>
       {view === "admin" && user.isAdmin && (
         <AdminView user={user} onBack={() => setView("calendar")} />
       )}
@@ -1958,9 +2054,9 @@ const backgroundClasses = useMemo(() => {
       )}
 
       {view === "calendar" && (
-        <div className="min-h-screen bg-stone-50 dark:bg-stone-950 text-stone-900 dark:text-stone-100 font-sans pb-20 md:pb-0">
+        <div className="min-h-screen bg-transparent text-stone-900 dark:text-stone-100 font-sans pb-20 md:pb-0">
       {/* Header */}
-      <header className="bg-white dark:bg-stone-900 border-b border-stone-200 dark:border-stone-800 px-4 md:px-6 py-3 md:py-4 sticky top-0 z-50 w-full isolate">
+      <header className="bg-white/80 dark:bg-stone-900/80 backdrop-blur-md border-b border-stone-200 dark:border-stone-800 px-4 md:px-6 py-3 md:py-4 sticky top-0 z-50 w-full isolate">
         <div className="max-w-5xl mx-auto flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 md:gap-3 shrink-0">
             <div className="w-8 h-8 md:w-10 md:h-10 bg-brand rounded-lg md:rounded-xl flex items-center justify-center text-white shadow-lg shadow-brand/20">
@@ -1977,7 +2073,7 @@ const backgroundClasses = useMemo(() => {
               onClick={() => setView("list")}
               className={cn(
                 "p-1.5 md:p-2 rounded-lg md:rounded-xl transition-all flex items-center gap-2",
-                view === "list" ? "bg-brand text-white" : "hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-600 dark:text-stone-400"
+                view === "list" ? "bg-accent text-white" : "hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-600 dark:text-stone-400"
               )}
               title="My Plans"
             >
@@ -2042,7 +2138,7 @@ const backgroundClasses = useMemo(() => {
         {/* Calendar Section */}
         <div className="lg:col-span-8 space-y-6">
           {/* Search & Filter Bar */}
-          <div className="bg-white dark:bg-stone-900 p-4 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800 flex flex-col md:flex-row gap-4 items-center">
+          <div className="bg-white/80 dark:bg-stone-900/80 backdrop-blur-md p-4 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800 flex flex-col md:flex-row gap-4 items-center">
             <div className="relative flex-1 w-full">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400 dark:text-stone-500" size={18} />
               <input 
@@ -2050,7 +2146,7 @@ const backgroundClasses = useMemo(() => {
                 placeholder="Search events..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-11 pr-4 py-2.5 bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-800 rounded-2xl focus:ring-2 focus:ring-brand outline-none transition-all text-sm text-stone-900 dark:text-white"
+                className="w-full pl-11 pr-4 py-2.5 bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-800 rounded-2xl focus:ring-2 focus:ring-accent outline-none transition-all text-sm text-stone-900 dark:text-white"
               />
             </div>
             <div className="flex gap-2 w-full md:w-auto">
@@ -2235,8 +2331,8 @@ const backgroundClasses = useMemo(() => {
                       className={cn(
                         "relative aspect-square p-1 sm:p-2 rounded-xl sm:rounded-2xl transition-all flex flex-col items-center justify-start group overflow-hidden",
                         !isCurrentMonth && "opacity-30",
-                        isSelected ? "bg-brand text-white shadow-lg shadow-brand/20" : "hover:bg-stone-50 dark:hover:bg-stone-800",
-                        isToday(day) && !isSelected && "bg-brand/10 dark:bg-brand/20 text-brand font-bold",
+                        isSelected ? "bg-accent text-white shadow-lg shadow-accent/20" : "hover:bg-stone-50 dark:hover:bg-stone-800",
+                        isToday(day) && !isSelected && "bg-accent/10 dark:bg-accent/20 text-accent font-bold",
                         !isSelected && dayEvents.length > 0 && "bg-stone-50/80 dark:bg-stone-800/50 ring-1 ring-stone-100 dark:ring-stone-800"
                       )}
                     >
@@ -2298,7 +2394,7 @@ const backgroundClasses = useMemo(() => {
                   setEditingEvent(null);
                   setIsModalOpen(true);
                 }}
-                className="w-10 h-10 bg-brand text-white rounded-xl flex items-center justify-center hover:bg-brand-hover transition-colors shadow-lg shadow-brand/20"
+                className="w-10 h-10 bg-accent text-white rounded-xl flex items-center justify-center hover:bg-accent-hover transition-colors shadow-lg shadow-accent/20"
               >
                 <Plus size={20} />
               </button>
@@ -2316,7 +2412,7 @@ const backgroundClasses = useMemo(() => {
                       setEditingEvent(null);
                       setIsModalOpen(true);
                     }}
-                    className="mt-3 text-xs font-bold text-brand hover:text-brand-hover uppercase tracking-wider"
+                    className="mt-3 text-xs font-bold text-accent hover:text-accent-hover uppercase tracking-wider"
                   >
                     Add Something
                   </button>
@@ -2346,7 +2442,7 @@ const backgroundClasses = useMemo(() => {
                               Special Day
                             </div>
                           ) : event.isShared ? (
-                            <div className="p-1 bg-brand/20 text-brand rounded-md" title="Shared with family">
+                            <div className="p-1 bg-accent/20 text-accent rounded-md" title="Shared with family">
                               <Users size={12} />
                             </div>
                           ) : (
@@ -2360,22 +2456,32 @@ const backgroundClasses = useMemo(() => {
                               <span>{event.commentCount}</span>
                             </div>
                           )}
-                          <span className="text-xs font-bold text-stone-400 dark:text-stone-500 uppercase tracking-wider">
-                            {event.type === 'public_holiday' ? 'Malaysia' : event.userName}
-                            {event.groupIds && event.groupIds.length > 0 && (
-                              <div className="flex flex-wrap gap-1 mt-1">
-                                {event.groupIds.map(gId => {
-                                  const group = user?.groups.find(g => g.id === gId);
-                                  if (!group) return null;
-                                  return (
-                                    <span key={gId} className="px-1.5 py-0.5 bg-brand/10 text-brand rounded text-[9px]">
-                                      {group.name}
-                                    </span>
-                                  );
-                                })}
-                              </div>
+                          <div className="flex items-center gap-2">
+                            {event.type !== 'public_holiday' && event.profileImage && (
+                              <img 
+                                src={event.profileImage} 
+                                alt={event.userName} 
+                                className="w-5 h-5 rounded-full object-cover border border-stone-200 dark:border-stone-700"
+                                referrerPolicy="no-referrer"
+                              />
                             )}
-                          </span>
+                            <span className="text-xs font-bold text-stone-400 dark:text-stone-500 uppercase tracking-wider">
+                              {event.type === 'public_holiday' ? 'Malaysia' : event.userName}
+                              {event.groupIds && event.groupIds.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {event.groupIds.map(gId => {
+                                    const group = user?.groups.find(g => g.id === gId);
+                                    if (!group) return null;
+                                    return (
+                                      <span key={gId} className="px-1.5 py-0.5 bg-brand/10 text-brand rounded text-[9px]">
+                                        {group.name}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </span>
+                          </div>
                         </div>
                         <div className="flex items-center gap-1 transition-all z-10">
                           <button 
@@ -2428,8 +2534,8 @@ const backgroundClasses = useMemo(() => {
                         </div>
                       )}
                       {event.startTime && (
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-brand mb-1">
-                          <div className="p-1 bg-brand/20 rounded-md">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-accent mb-1">
+                          <div className="p-1 bg-accent/20 rounded-md">
                             <Clock size={10} />
                           </div>
                           <span>{formatTime(event.startTime)} {event.endTime && `– ${formatTime(event.endTime)}`}</span>
@@ -2457,7 +2563,7 @@ const backgroundClasses = useMemo(() => {
           </div>
 
           {/* Family Feed Summary */}
-          <div className="bg-brand rounded-3xl p-6 text-white shadow-xl shadow-brand/20 border border-transparent dark:border-stone-800">
+          <div className="bg-accent rounded-3xl p-6 text-white shadow-xl shadow-accent/20 border border-transparent dark:border-stone-800">
             <h3 className="text-sm font-bold uppercase tracking-widest opacity-60 mb-4">Upcoming Family Plans</h3>
             <div className="space-y-4">
               {upcomingEvents.map(event => (
@@ -2841,9 +2947,19 @@ const backgroundClasses = useMemo(() => {
                                     {formatTime(event.startTime)}
                                   </span>
                                 )}
-                                <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500 uppercase tracking-wider">
-                                  {event.type === 'public_holiday' ? 'Public Holiday' : `By ${event.userName}`}
-                                </span>
+                                <div className="flex items-center gap-2">
+                                  {event.type !== 'public_holiday' && event.profileImage && (
+                                    <img 
+                                      src={event.profileImage} 
+                                      alt={event.userName} 
+                                      className="w-4 h-4 rounded-full object-cover border border-stone-200 dark:border-stone-700"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                  )}
+                                  <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500 uppercase tracking-wider">
+                                    {event.type === 'public_holiday' ? 'Public Holiday' : `By ${event.userName}`}
+                                  </span>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -2926,7 +3042,7 @@ const backgroundClasses = useMemo(() => {
                     type="text" 
                     value={newEvent.title}
                     onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
-                    className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-brand focus:border-transparent outline-none transition-all"
+                    className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-accent focus:border-transparent outline-none transition-all"
                     placeholder="What are we doing?"
                   />
                 </div>
@@ -2938,7 +3054,7 @@ const backgroundClasses = useMemo(() => {
                       type="date" 
                       value={newEvent.startDate}
                       onChange={(e) => setNewEvent({ ...newEvent, startDate: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-brand focus:border-transparent outline-none transition-all"
+                      className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-accent focus:border-transparent outline-none transition-all"
                     />
                   </div>
                   <div>
@@ -2947,7 +3063,7 @@ const backgroundClasses = useMemo(() => {
                       type="date" 
                       value={newEvent.endDate}
                       onChange={(e) => setNewEvent({ ...newEvent, endDate: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-brand focus:border-transparent outline-none transition-all"
+                      className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-accent focus:border-transparent outline-none transition-all"
                     />
                   </div>
                 </div>
@@ -2985,7 +3101,7 @@ const backgroundClasses = useMemo(() => {
                         type="time" 
                         value={newEvent.startTime}
                         onChange={(e) => setNewEvent({ ...newEvent, startTime: e.target.value })}
-                        className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-brand focus:border-transparent outline-none transition-all"
+                        className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-accent focus:border-transparent outline-none transition-all"
                       />
                     </div>
                     <div>
@@ -2994,7 +3110,7 @@ const backgroundClasses = useMemo(() => {
                         type="time" 
                         value={newEvent.endTime}
                         onChange={(e) => setNewEvent({ ...newEvent, endTime: e.target.value })}
-                        className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-brand focus:border-transparent outline-none transition-all"
+                        className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-accent focus:border-transparent outline-none transition-all"
                       />
                     </div>
                   </motion.div>
@@ -3005,7 +3121,7 @@ const backgroundClasses = useMemo(() => {
                   <textarea 
                     value={newEvent.description}
                     onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
-                    className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-brand focus:border-transparent outline-none transition-all resize-none h-24"
+                    className="w-full px-4 py-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:ring-2 focus:ring-accent focus:border-transparent outline-none transition-all resize-none h-24"
                     placeholder="Add some details..."
                   />
                 </div>
@@ -3105,7 +3221,7 @@ const backgroundClasses = useMemo(() => {
                 <button 
                   onClick={handleAddEvent}
                   disabled={!newEvent.title.trim() || isSaving}
-                  className="flex-1 py-3 bg-brand text-white rounded-xl font-bold text-sm hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-brand/20 flex items-center justify-center gap-2"
+                  className="flex-1 py-3 bg-accent text-white rounded-xl font-bold text-sm hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-accent/20 flex items-center justify-center gap-2"
                 >
                   {isSaving ? (
                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -3127,7 +3243,7 @@ const backgroundClasses = useMemo(() => {
             setEditingEvent(null);
             setIsModalOpen(true);
           }}
-          className="w-14 h-14 bg-brand text-white rounded-2xl flex items-center justify-center shadow-2xl shadow-brand/20 hover:scale-110 active:scale-95 transition-all"
+          className="w-14 h-14 bg-accent text-white rounded-2xl flex items-center justify-center shadow-2xl shadow-accent/20 hover:scale-110 active:scale-95 transition-all"
         >
           <Plus size={28} />
         </button>
