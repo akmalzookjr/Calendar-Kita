@@ -2129,7 +2129,7 @@ return matchesSearch && matchesPerson && matchesCategory;
             </div>
           </div>
 
-          <div className="flex items-center gap-2 md:gap-3 overflow-hidden">
+          <div className="flex items-center gap-2 md:gap-3">
             <button 
               onClick={() => setView("list")}
               className={cn(
