@@ -2089,70 +2089,78 @@ return matchesSearch && matchesPerson && matchesCategory;
           </div>
 
           {/* Search Results List */}
-          {(searchQuery || filterPerson !== 'all' || filterCategory !== 'all') && (
-            <motion.div 
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-white dark:bg-stone-900 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800 overflow-hidden"
-            >
-              <div className="p-4 border-b border-stone-100 dark:border-stone-800 flex justify-between items-center bg-stone-50/50 dark:bg-stone-800/50">
-                <h3 className="text-sm font-semibold text-stone-700 dark:text-stone-300 flex items-center gap-2">
-                  <Search size={16} className="text-brand" />
-                  Search Results ({filteredEvents.length})
-                </h3>
-                <button 
-                  onClick={() => {
-                    setSearchQuery("");
-                    setFilterPerson("all");
-                    setFilterCategory("all");
-                  }}
-                  className="text-xs text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300 transition-colors"
-                >
-                  Clear all
-                </button>
+{(searchQuery || filterPerson !== 'all' || filterCategory !== 'all') && (
+  <motion.div 
+    initial={{ opacity: 0, y: -10 }}
+    animate={{ opacity: 1, y: 0 }}
+    className="bg-white dark:bg-stone-900 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800 overflow-hidden"
+  >
+    <div className="p-4 border-b border-stone-100 dark:border-stone-800 flex justify-between items-center bg-stone-50/50 dark:bg-stone-800/50">
+      <h3 className="text-sm font-semibold text-stone-700 dark:text-stone-300 flex items-center gap-2">
+        <Search size={16} className="text-brand" />
+        Search Results ({filteredEvents.length})
+      </h3>
+      <button 
+        onClick={() => {
+          setSearchQuery("");
+          setFilterPerson("all");
+          setFilterCategory("all");
+        }}
+        className="text-xs text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300 transition-colors"
+      >
+        Clear all
+      </button>
+    </div>
+    <div className="max-h-60 overflow-y-auto divide-y divide-stone-100 dark:divide-stone-800">
+      {filteredEvents.length > 0 ? (
+        filteredEvents.sort((a, b) => a.date.localeCompare(b.date)).map(event => (
+          <div
+            key={event.id}
+            className="w-full text-left p-4 hover:bg-stone-50 dark:hover:bg-stone-800 transition-colors flex items-center justify-between group"
+          >
+            <div className="flex items-center gap-3 flex-1 cursor-pointer" onClick={() => navigateToDate(event.date)}>
+              <div className={clsx(
+                "w-2 h-2 rounded-full",
+                event.type === 'public_holiday' ? "bg-red-500" : 
+                event.type === 'observance' ? "bg-purple-500" : 
+                "bg-brand"
+              )} />
+              <div>
+                <p className="text-sm font-medium text-stone-800 dark:text-stone-200 group-hover:text-brand transition-colors">
+                  {event.title}
+                </p>
+                <p className="text-xs text-stone-500 dark:text-stone-400">
+                  {format(parseISO(event.date), "PPP")}
+                  {event.startTime && ` • ${event.startTime}`}
+                  {event.type === 'observance' && (
+                    <span className="ml-2 text-purple-500 dark:text-purple-400 text-[10px] font-medium">Special Day</span>
+                  )}
+                  {event.type === 'public_holiday' && (
+                    <span className="ml-2 text-red-500 dark:text-red-400 text-[10px] font-medium">Public Holiday</span>
+                  )}
+                </p>
               </div>
-              <div className="max-h-60 overflow-y-auto divide-y divide-stone-100 dark:divide-stone-800">
-                {filteredEvents.length > 0 ? (
-                  filteredEvents.sort((a, b) => a.date.localeCompare(b.date)).map(event => (
-                    <div
-                      key={event.id}
-                      className="w-full text-left p-4 hover:bg-stone-50 dark:hover:bg-stone-800 transition-colors flex items-center justify-between group"
-                    >
-                      <div className="flex items-center gap-3 flex-1 cursor-pointer" onClick={() => navigateToDate(event.date)}>
-                        <div className={clsx(
-                          "w-2 h-2 rounded-full",
-                          event.type === 'public_holiday' ? "bg-red-500" : "bg-brand"
-                        )} />
-                        <div>
-                          <p className="text-sm font-medium text-stone-800 dark:text-stone-200 group-hover:text-brand transition-colors">
-                            {event.title}
-                          </p>
-                          <p className="text-xs text-stone-500 dark:text-stone-400">
-                            {format(parseISO(event.date), "PPP")}
-                            {event.startTime && ` • ${event.startTime}`}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button 
-                          onClick={() => handleOpenDetail(event)}
-                          className="p-2 text-stone-400 dark:text-stone-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-xl transition-all"
-                          title="View Details"
-                        >
-                          <Eye size={16} />
-                        </button>
-                        <ChevronRight size={14} className="text-stone-300 dark:text-stone-600 group-hover:text-brand transition-all transform group-hover:translate-x-1" />
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="p-8 text-center">
-                    <p className="text-sm text-stone-400 dark:text-stone-500 italic">No events match your search criteria.</p>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => handleOpenDetail(event)}
+                className="p-2 text-stone-400 dark:text-stone-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-xl transition-all"
+                title="View Details"
+              >
+                <Eye size={16} />
+              </button>
+              <ChevronRight size={14} className="text-stone-300 dark:text-stone-600 group-hover:text-brand transition-all transform group-hover:translate-x-1" />
+            </div>
+          </div>
+        ))
+      ) : (
+        <div className="p-8 text-center">
+          <p className="text-sm text-stone-400 dark:text-stone-500 italic">No events match your search criteria.</p>
+        </div>
+      )}
+    </div>
+  </motion.div>
+)}
 
           <div className="w-full bg-white dark:bg-stone-900 rounded-3xl shadow-sm border border-stone-200 dark:border-stone-800 overflow-hidden">
             {/* Calendar Header */}
