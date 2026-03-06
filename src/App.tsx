@@ -2715,13 +2715,13 @@ return matchesSearch && matchesPerson && matchesCategory;
 
               <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                 <div className="flex-1 flex flex-col md:grid md:grid-cols-2 gap-6 p-4 md:p-6 min-h-0 overflow-hidden">
-                  <div className="shrink-0 md:flex-1 md:overflow-y-auto custom-scrollbar space-y-3 md:space-y-6 pr-1">
-                    <div className="bg-stone-50 dark:bg-stone-800/50 p-3 md:p-4 rounded-2xl border border-stone-100 dark:border-stone-800">
-                      <label className="block text-[10px] font-bold text-stone-400 dark:text-stone-500 uppercase tracking-widest mb-2 md:mb-3">Date & Time</label>
-                      <div className="space-y-2 md:space-y-3">
+                  <div className="flex-none max-h-[30vh] overflow-y-auto md:max-h-none md:flex-1 custom-scrollbar space-y-2 md:space-y-6 pr-1">
+                    <div className="bg-stone-50 dark:bg-stone-800/50 p-2.5 md:p-4 rounded-2xl border border-stone-100 dark:border-stone-800">
+                      <label className="block text-[10px] font-bold text-stone-400 dark:text-stone-500 uppercase tracking-widest mb-1 md:mb-3">Date & Time</label>
+                      <div className="space-y-1.5 md:space-y-3">
                         <div className="flex items-center gap-3 text-stone-700 dark:text-stone-200">
-                          <CalendarIcon size={18} className="text-brand" />
-                          <span className="text-sm font-medium">
+                          <CalendarIcon size={16} className="text-brand md:w-[18px] md:h-[18px]" />
+                          <span className="text-xs md:text-sm font-medium">
                             {isSameDay(parseISO(selectedEventForDetail.date), parseISO(selectedEventForDetail.endDate)) 
                               ? format(parseISO(selectedEventForDetail.date), "EEEE, do MMMM yyyy")
                               : `${format(parseISO(selectedEventForDetail.date), "MMM d")} - ${format(parseISO(selectedEventForDetail.endDate), "MMM d, yyyy")}`
@@ -2730,11 +2730,11 @@ return matchesSearch && matchesPerson && matchesCategory;
                         </div>
                         {selectedEventForDetail.startTime && (
                           <div className="flex items-center gap-3 text-stone-700 dark:text-stone-200">
-                            <Clock size={18} className="text-brand" />
-                            <span className="text-sm font-medium">
+                            <Clock size={16} className="text-brand md:w-[18px] md:h-[18px]" />
+                            <span className="text-xs md:text-sm font-medium">
                               {formatTime(selectedEventForDetail.startTime)} {selectedEventForDetail.endTime && `– ${formatTime(selectedEventForDetail.endTime)}`}
                               {selectedEventForDetail.endTime && (
-                                <span className="ml-2 text-stone-400 dark:text-stone-500 text-xs">({calculateDuration(selectedEventForDetail.startTime, selectedEventForDetail.endTime)})</span>
+                                <span className="ml-2 text-stone-400 dark:text-stone-500 text-[10px] md:text-xs">({calculateDuration(selectedEventForDetail.startTime, selectedEventForDetail.endTime)})</span>
                               )}
                             </span>
                           </div>
@@ -2743,33 +2743,33 @@ return matchesSearch && matchesPerson && matchesCategory;
                     </div>
 
                     {selectedEventForDetail.description && (
-                      <div className="bg-stone-50 dark:bg-stone-800/50 p-3 md:p-4 rounded-2xl border border-stone-100 dark:border-stone-800">
-                        <label className="block text-[10px] font-bold text-stone-400 dark:text-stone-500 uppercase tracking-widest mb-2 md:mb-3">Description</label>
-                        <p className="text-sm text-stone-600 dark:text-stone-300 whitespace-pre-wrap leading-relaxed line-clamp-3 md:line-clamp-none">
+                      <div className="bg-stone-50 dark:bg-stone-800/50 p-2.5 md:p-4 rounded-2xl border border-stone-100 dark:border-stone-800">
+                        <label className="block text-[10px] font-bold text-stone-400 dark:text-stone-500 uppercase tracking-widest mb-1 md:mb-3">Description</label>
+                        <p className="text-xs md:text-sm text-stone-600 dark:text-stone-300 whitespace-pre-wrap leading-relaxed line-clamp-2 md:line-clamp-none">
                           {selectedEventForDetail.description}
                         </p>
                       </div>
                     )}
 
-                    <div className="bg-stone-50 dark:bg-stone-800/50 p-3 md:p-4 rounded-2xl border border-stone-100 dark:border-stone-800">
-                      <label className="block text-[10px] font-bold text-stone-400 dark:text-stone-500 uppercase tracking-widest mb-2 md:mb-3">Visibility</label>
-                      <div className="flex flex-wrap gap-2">
+                    <div className="bg-stone-50 dark:bg-stone-800/50 p-2.5 md:p-4 rounded-2xl border border-stone-100 dark:border-stone-800">
+                      <label className="block text-[10px] font-bold text-stone-400 dark:text-stone-500 uppercase tracking-widest mb-1 md:mb-3">Visibility</label>
+                      <div className="flex flex-wrap gap-1.5 md:gap-2">
                         {!selectedEventForDetail.isShared ? (
-                          <div className="flex items-center gap-2 px-3 py-1.5 bg-stone-200 dark:bg-stone-700 text-stone-600 dark:text-stone-400 rounded-lg text-xs font-bold">
-                            <Lock size={12} />
+                          <div className="flex items-center gap-2 px-2 py-1 bg-stone-200 dark:bg-stone-700 text-stone-600 dark:text-stone-400 rounded-lg text-[10px] md:text-xs font-bold">
+                            <Lock size={10} className="md:w-3 md:h-3" />
                             <span>Private</span>
                           </div>
                         ) : (
                           <>
-                            <div className="flex items-center gap-2 px-3 py-1.5 bg-brand/10 text-brand rounded-lg text-xs font-bold">
-                              <Users size={12} />
+                            <div className="flex items-center gap-2 px-2 py-1 bg-brand/10 text-brand rounded-lg text-[10px] md:text-xs font-bold">
+                              <Users size={10} className="md:w-3 md:h-3" />
                               <span>Shared with Family</span>
                             </div>
                             {selectedEventForDetail.groupIds.map(gId => {
                               const group = user?.groups.find(g => g.id === gId);
                               if (!group) return null;
                               return (
-                                <div key={gId} className="px-3 py-1.5 bg-brand/10 text-brand rounded-lg text-xs font-bold">
+                                <div key={gId} className="px-2 py-1 bg-brand/10 text-brand rounded-lg text-[10px] md:text-xs font-bold">
                                   {group.name}
                                 </div>
                               );
@@ -2790,7 +2790,7 @@ return matchesSearch && matchesPerson && matchesCategory;
                       </h4>
                     </div>
 
-                    <div className="flex-1 bg-stone-50 dark:bg-stone-800/30 rounded-2xl border border-stone-100 dark:border-stone-800 p-4 overflow-y-auto custom-scrollbar space-y-4 mb-4">
+                    <div className="flex-1 bg-stone-50 dark:bg-stone-800/30 rounded-2xl border border-stone-100 dark:border-stone-800 p-4 overflow-y-auto custom-scrollbar space-y-4 mb-4 md:max-h-[350px]">
                       {isFetchingComments ? (
                         <div className="flex flex-col items-center justify-center h-full gap-2 text-stone-400">
                           <div className="w-5 h-5 border-2 border-brand/30 border-t-brand rounded-full animate-spin" />
@@ -2804,39 +2804,42 @@ return matchesSearch && matchesPerson && matchesCategory;
                           <p className="text-xs text-stone-400 dark:text-stone-500 italic">No comments yet. Be the first to say something!</p>
                         </div>
                       ) : (
-                        comments.map(comment => (
-                          <div key={comment.id} className="flex gap-3">
-                            <div className="w-8 h-8 rounded-full overflow-hidden bg-stone-200 dark:bg-stone-700 shrink-0">
-                              {comment.profileImage ? (
-                                <img src={comment.profileImage} alt={comment.userName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center text-stone-400">
-                                  <User size={14} />
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex items-baseline justify-between gap-2 mb-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs font-bold text-stone-800 dark:text-stone-200">{comment.userName}</span>
-                                  <span className="text-[10px] text-stone-400 dark:text-stone-500">{format(parseISO(comment.createdAt), "MMM d, HH:mm")}</span>
-                                </div>
-                                {(comment.userId === user?.id || user?.isAdmin) && (
-                                  <button 
-                                    onClick={() => handleDeleteComment(comment.id)}
-                                    className="text-stone-400 hover:text-red-500 transition-colors p-1 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20"
-                                    title="Delete comment"
-                                  >
-                                    <Trash2 size={12} />
-                                  </button>
+                        <>
+                          {comments.map(comment => (
+                            <div key={comment.id} className="flex gap-3">
+                              <div className="w-8 h-8 rounded-full overflow-hidden bg-stone-200 dark:bg-stone-700 shrink-0">
+                                {comment.profileImage ? (
+                                  <img src={comment.profileImage} alt={comment.userName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-stone-400">
+                                    <User size={14} />
+                                  </div>
                                 )}
                               </div>
-                              <div className="bg-white dark:bg-stone-800 p-3 rounded-2xl rounded-tl-none border border-stone-100 dark:border-stone-700 shadow-sm">
-                                <p className="text-sm text-stone-600 dark:text-stone-300 leading-relaxed">{comment.text}</p>
+                              <div className="flex-1">
+                                <div className="flex items-baseline justify-between gap-2 mb-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold text-stone-800 dark:text-stone-200">{comment.userName}</span>
+                                    <span className="text-[10px] text-stone-400 dark:text-stone-500">{format(parseISO(comment.createdAt), "MMM d, HH:mm")}</span>
+                                  </div>
+                                  {(comment.userId === user?.id || user?.isAdmin) && (
+                                    <button 
+                                      onClick={() => handleDeleteComment(comment.id)}
+                                      className="text-stone-400 hover:text-red-500 transition-colors p-1 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20"
+                                      title="Delete comment"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  )}
+                                </div>
+                                <div className="bg-white dark:bg-stone-800 p-3 rounded-2xl rounded-tl-none border border-stone-100 dark:border-stone-700 shadow-sm">
+                                  <p className="text-sm text-stone-600 dark:text-stone-300 leading-relaxed">{comment.text}</p>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))
+                          ))}
+                          <div ref={commentsEndRef} />
+                        </>
                       )}
                     </div>
 
