@@ -1344,24 +1344,27 @@ export default function App() {
 
   const ws = useRef<WebSocket | null>(null);
 
-  const checkAuth = async () => {
-    try {
-      const res = await fetch("/api/auth/me", { credentials: "include" });
-      if (res.ok) {
-        const userData = await res.json();
-        setUser(userData);
-      }
-    } catch (e) {
-      console.error("Auth check failed", e);
-    } finally {
-      setIsLoading(false);
+const checkAuth = async (retryCount = 0) => {
+  try {
+    const res = await fetch("/api/auth/me", { credentials: "include" });
+    if (res.ok) {
+      const userData = await res.json();
+      setUser(userData);
+    } else if (res.status === 401 && retryCount < 3) {
+      // Retry up to 3 times with increasing delays
+      setTimeout(() => checkAuth(retryCount + 1), 500 * (retryCount + 1));
     }
-  };
+  } catch (e) {
+    console.error("Auth check failed", e);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
-  // Auth Check
-  useEffect(() => {
-    checkAuth();
-  }, []);
+// Auth Check
+useEffect(() => {
+  checkAuth();
+}, []);
 
   // Dark Mode Effect
   useEffect(() => {
