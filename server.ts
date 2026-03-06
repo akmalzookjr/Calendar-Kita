@@ -1522,6 +1522,34 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
     }
   });
 
+  // Add this temporary test route to manually sync holidays
+  app.get("/api/test/sync-holidays/:year", authenticate, async (req: any, res) => {
+    const { year } = req.params;
+    
+    try {
+      // Get the base URL dynamically
+      const protocol = req.protocol;
+      const host = req.get('host');
+      const baseUrl = `${protocol}://${host}`;
+      
+      console.log(`🔍 Manually syncing holidays for ${year}...`);
+      
+      // Call the holiday sync function
+      const response = await fetch(`${baseUrl}/api/holidays/sync/${year}`, {
+        headers: {
+          'Cookie': req.headers.cookie || ''
+        }
+      });
+      
+      const data = await response.json();
+      console.log(`✅ Manual sync result:`, data);
+      res.json(data);
+    } catch (error) {
+      console.error("❌ Manual sync error:", error);
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
   // --- FRONTEND SERVING ---
   if (!isProd) {
     const vite = await createViteServer({
