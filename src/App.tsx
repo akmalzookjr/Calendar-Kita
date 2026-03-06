@@ -1832,11 +1832,11 @@ useEffect(() => {
         event.userId === filterPerson;
       
       const matchesCategory = 
-        filterCategory === "all" || 
-        (event.type === filterCategory) ||
-        (!event.type && filterCategory === 'other');
+  filterCategory === "all" || 
+  (event.type === filterCategory) ||
+  (filterCategory === 'other' && !event.type && !event.type?.startsWith('public'));
 
-      return matchesSearch && matchesPerson && matchesCategory;
+return matchesSearch && matchesPerson && matchesCategory;
     });
   }, [events, searchQuery, filterPerson, filterCategory]);
 
@@ -2073,16 +2073,17 @@ useEffect(() => {
               <div className="relative flex-1 md:w-40">
                 <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 dark:text-stone-500" size={14} />
                 <select 
-                  value={filterCategory}
-                  onChange={(e) => setFilterCategory(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2.5 bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-800 rounded-2xl focus:ring-2 focus:ring-brand outline-none transition-all text-xs font-medium appearance-none text-stone-900 dark:text-white"
-                  >
-                    <option value="all">All Categories</option>
-                  <option value="public_holiday">Holidays</option>
-                  <option value="work">Work</option>
-                  <option value="personal">Personal</option>
-                  <option value="other">Other</option>
-                </select>
+  value={filterCategory}
+  onChange={(e) => setFilterCategory(e.target.value)}
+  className="w-full pl-9 pr-3 py-2.5 bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-800 rounded-2xl focus:ring-2 focus:ring-brand outline-none transition-all text-xs font-medium appearance-none text-stone-900 dark:text-white"
+>
+  <option value="all">All Categories</option>
+  <option value="public_holiday">Public Holidays</option>
+  <option value="observance">Special Days</option>
+  <option value="work">Work</option>
+  <option value="personal">Personal</option>
+  <option value="other">Other</option>
+</select>
               </div>
             </div>
           </div>

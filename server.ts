@@ -1135,52 +1135,57 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
   }
 });
 
-  // --- EVENT ROUTES ---
-  app.get("/api/events", authenticate, (req: any, res) => {
-    try {
-      const userId = req.user.id;
-      
-      const userGroups = db.prepare("SELECT groupId FROM user_groups WHERE userId = ?").all(userId) as any[];
-      const groupIds = userGroups.map(ug => ug.groupId);
+// --- EVENT ROUTES ---
+app.get("/api/events", authenticate, (req: any, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const userGroups = db.prepare("SELECT groupId FROM user_groups WHERE userId = ?").all(userId) as any[];
+    const groupIds = userGroups.map(ug => ug.groupId);
 
-      let events;
-      if (groupIds.length > 0) {
-        const placeholders = groupIds.map(() => "?").join(",");
-        events = db.prepare(`
-          SELECT DISTINCT e.*, strftime('%Y-%m-%dT%H:%M:%SZ', e.createdAt) as createdAt, 
-          (SELECT COUNT(*) FROM comments WHERE eventId = e.id) as commentCount 
-          FROM events e
-          LEFT JOIN event_groups eg ON e.id = eg.eventId
-          WHERE e.userId = ? OR eg.groupId IN (${placeholders}) OR e.type = 'public_holiday'
-          ORDER BY e.date ASC
-        `).all(userId, ...groupIds) as any[];
-      } else {
-        events = db.prepare(`
-          SELECT e.*, strftime('%Y-%m-%dT%H:%M:%SZ', e.createdAt) as createdAt, 
-          (SELECT COUNT(*) FROM comments WHERE eventId = e.id) as commentCount 
-          FROM events e 
-          WHERE e.userId = ? OR e.type = 'public_holiday' 
-          ORDER BY e.date ASC
-        `).all(userId) as any[];
-      }
-
-      const eventsWithGroups = events.map(event => {
-        const groups = db.prepare("SELECT groupId FROM event_groups WHERE eventId = ?").all(event.id) as any[];
-        return { 
-          ...event, 
-          isShared: !!event.isShared,
-          systemGenerated: !!event.systemGenerated,
-          readOnly: !!event.readOnly,
-          groupIds: groups.map(g => g.groupId) 
-        };
-      });
-
-      res.json(eventsWithGroups);
-    } catch (error) {
-      console.error("Failed to fetch events:", error);
-      res.status(500).json({ error: "Failed to fetch events" });
+    let events;
+    if (groupIds.length > 0) {
+      const placeholders = groupIds.map(() => "?").join(",");
+      events = db.prepare(`
+        SELECT DISTINCT e.*, strftime('%Y-%m-%dT%H:%M:%SZ', e.createdAt) as createdAt, 
+        (SELECT COUNT(*) FROM comments WHERE eventId = e.id) as commentCount 
+        FROM events e
+        LEFT JOIN event_groups eg ON e.id = eg.eventId
+        WHERE e.userId = ? 
+        OR eg.groupId IN (${placeholders}) 
+        OR e.type = 'public_holiday' 
+        OR e.type = 'observance'
+        ORDER BY e.date ASC
+      `).all(userId, ...groupIds) as any[];
+    } else {
+      events = db.prepare(`
+        SELECT e.*, strftime('%Y-%m-%dT%H:%M:%SZ', e.createdAt) as createdAt, 
+        (SELECT COUNT(*) FROM comments WHERE eventId = e.id) as commentCount 
+        FROM events e 
+        WHERE e.userId = ? 
+        OR e.type = 'public_holiday' 
+        OR e.type = 'observance' 
+        ORDER BY e.date ASC
+      `).all(userId) as any[];
     }
-  });
+
+    const eventsWithGroups = events.map(event => {
+      const groups = db.prepare("SELECT groupId FROM event_groups WHERE eventId = ?").all(event.id) as any[];
+      return { 
+        ...event, 
+        isShared: !!event.isShared,
+        systemGenerated: !!event.systemGenerated,
+        readOnly: !!event.readOnly,
+        groupIds: groups.map(g => g.groupId) 
+      };
+    });
+
+    res.json(eventsWithGroups);
+  } catch (error) {
+    console.error("Failed to fetch events:", error);
+    res.status(500).json({ error: "Failed to fetch events" });
+  }
+});
 
   app.post("/api/events", authenticate, async (req: any, res) => {
     const { id, title, description, date, endDate, startTime, endTime, groupIds } = req.body;
