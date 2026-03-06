@@ -872,102 +872,190 @@ async function startServer() {
     }
   });
 
-  // --- HOLIDAY ROUTES ---
-  app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
-    const { year } = req.params;
+// --- HOLIDAY ROUTES ---
+app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
+  const { year } = req.params;
+  
+  try {
+    // First, delete existing holidays from local DB
+    const startDate = `${year}-01-01`;
+    const endDate = `${year}-12-31`;
     
-    try {
-      // First, delete existing holidays from local DB
-      const startDate = `${year}-01-01`;
-      const endDate = `${year}-12-31`;
-      
-      db.prepare(`
-        DELETE FROM events 
-        WHERE systemGenerated = 1 
-        AND type = 'public_holiday'
-        AND date >= ? AND date <= ?
-      `).run(startDate, endDate);
+    db.prepare(`
+      DELETE FROM events 
+      WHERE systemGenerated = 1 
+      AND type = 'public_holiday'
+      AND date >= ? AND date <= ?
+    `).run(startDate, endDate);
 
-      // Try Nager.Date API
+    let holidays = [];
+    let apiSuccess = false;
+    
+    // Try Nager.Date API first
+    try {
+      console.log(`Fetching holidays for ${year} from Nager.Date API...`);
       const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/MY`);
       
-      if (!response.ok) {
-        throw new Error(`API returned ${response.status}`);
-      }
-      
-      const holidays = await response.json();
-      
-      if (!holidays || holidays.length === 0) {
-        return res.json({ message: "No holidays found", count: 0 });
-      }
-
-      console.log(`Found ${holidays.length} holidays from Nager.Date API`);
-
-      // Insert holidays into local database
-      const insertHoliday = db.prepare(`
-        INSERT INTO events 
-        (id, title, description, date, endDate, userId, userName, isShared, type, systemGenerated, readOnly) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      let insertedCount = 0;
-      
-      holidays.forEach((holiday: any) => {
-        const safeName = holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().substring(0, 50);
-        const id = `holiday-${holiday.date}-${safeName}`;
-        
-        try {
-          insertHoliday.run(
-            id,
-            holiday.localName,
-            holiday.name || holiday.localName,
-            holiday.date,
-            holiday.date,
-            'system',
-            'System',
-            1,
-            'public_holiday',
-            1,
-            1
-          );
-          insertedCount++;
-        } catch (err) {
-          // Ignore duplicates
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.length > 0) {
+          holidays = data;
+          apiSuccess = true;
+          console.log(`Found ${holidays.length} holidays from Nager.Date API`);
         }
-      });
-
-      // Also sync to Supabase
-      try {
-        const holidayInserts = holidays.map((holiday: any) => ({
-          id: `holiday-${holiday.date}-${holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().substring(0, 50)}`,
-          title: holiday.localName,
-          description: holiday.name || holiday.localName,
-          date: holiday.date,
-          endDate: holiday.date,
-          userId: 'system',
-          userName: 'System',
-          isShared: true,
-          type: 'public_holiday',
-          systemGenerated: true,
-          readOnly: true
-        }));
-        await supabase.from('events').upsert(holidayInserts);
-        console.log(`✅ Synced ${holidayInserts.length} holidays to Supabase`);
-      } catch (supabaseError) {
-        console.error("Failed to sync holidays to Supabase:", supabaseError);
       }
-
-      res.json({ 
-        message: `Synced ${insertedCount} holidays`, 
-        count: insertedCount,
-        source: "Nager.Date API"
-      });
-      
     } catch (error) {
-      console.error("Holiday sync error:", error);
-      res.json({ message: "Could not fetch holidays", count: 0 });
+      console.error("Nager.Date API failed:", error);
     }
-  });
+
+    // If Nager.Date API fails, try Calendarific as backup
+    if (!apiSuccess) {
+      try {
+        console.log(`Trying Calendarific API for ${year}...`);
+        const CALENDARIFIC_API_KEY = process.env.CALENDARIFIC_API_KEY;
+        
+        if (CALENDARIFIC_API_KEY) {
+          const response = await fetch(
+            `https://calendarific.com/api/v2/holidays?` +
+            `api_key=${CALENDARIFIC_API_KEY}&` +
+            `country=MY&` +
+            `year=${year}`
+          );
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.response && data.response.holidays) {
+              holidays = data.response.holidays.map((h: any) => ({
+                date: h.date.iso,
+                localName: h.name,
+                name: h.description || h.name
+              }));
+              apiSuccess = true;
+              console.log(`Found ${holidays.length} holidays from Calendarific API`);
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Calendarific API failed:", error);
+      }
+    }
+
+    // If both APIs fail, use fallback data
+    if (!apiSuccess) {
+      console.log(`Using fallback holiday data for ${year}`);
+      
+      // Malaysia public holidays fallback
+      if (year === "2026") {
+        holidays = [
+          { date: "2026-01-01", localName: "New Year's Day", name: "New Year's Day" },
+          { date: "2026-02-17", localName: "Chinese New Year", name: "Chinese New Year" },
+          { date: "2026-02-18", localName: "Chinese New Year Holiday", name: "Chinese New Year Holiday" },
+          { date: "2026-03-20", localName: "Hari Raya Puasa", name: "Eid al-Fitr" },
+          { date: "2026-03-21", localName: "Hari Raya Puasa Day 2", name: "Eid al-Fitr Day 2" },
+          { date: "2026-05-01", localName: "Labour Day", name: "Labour Day" },
+          { date: "2026-05-27", localName: "Hari Raya Haji", name: "Eid al-Adha" },
+          { date: "2026-06-01", localName: "Agong's Birthday", name: "Yang di-Pertuan Agong's Birthday" },
+          { date: "2026-06-17", localName: "Awal Muharram", name: "Islamic New Year" },
+          { date: "2026-08-31", localName: "National Day", name: "Hari Merdeka" },
+          { date: "2026-09-16", localName: "Malaysia Day", name: "Malaysia Day" },
+          { date: "2026-11-08", localName: "Deepavali", name: "Deepavali" },
+          { date: "2026-12-25", localName: "Christmas Day", name: "Christmas Day" }
+        ];
+      } else if (year === "2025") {
+        holidays = [
+          { date: "2025-01-01", localName: "New Year's Day", name: "New Year's Day" },
+          { date: "2025-01-29", localName: "Chinese New Year", name: "Chinese New Year" },
+          { date: "2025-01-30", localName: "Chinese New Year Holiday", name: "Chinese New Year Holiday" },
+          { date: "2025-03-31", localName: "Hari Raya Puasa", name: "Eid al-Fitr" },
+          { date: "2025-04-01", localName: "Hari Raya Puasa Day 2", name: "Eid al-Fitr Day 2" },
+          { date: "2025-05-01", localName: "Labour Day", name: "Labour Day" },
+          { date: "2025-06-02", localName: "Agong's Birthday", name: "Yang di-Pertuan Agong's Birthday" },
+          { date: "2025-06-07", localName: "Hari Raya Haji", name: "Eid al-Adha" },
+          { date: "2025-06-27", localName: "Awal Muharram", name: "Islamic New Year" },
+          { date: "2025-08-31", localName: "National Day", name: "Hari Merdeka" },
+          { date: "2025-09-16", localName: "Malaysia Day", name: "Malaysia Day" },
+          { date: "2025-10-20", localName: "Deepavali", name: "Deepavali" },
+          { date: "2025-12-25", localName: "Christmas Day", name: "Christmas Day" }
+        ];
+      }
+    }
+
+    if (!holidays.length) {
+      return res.json({ message: "No holidays found", count: 0 });
+    }
+
+    // Insert holidays into local database
+    const insertHoliday = db.prepare(`
+      INSERT INTO events 
+      (id, title, description, date, endDate, userId, userName, isShared, type, systemGenerated, readOnly) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    let insertedCount = 0;
+    
+    holidays.forEach((holiday: any) => {
+      const safeName = holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().substring(0, 50);
+      const id = `holiday-${holiday.date}-${safeName}`;
+      
+      try {
+        insertHoliday.run(
+          id,
+          holiday.localName,
+          holiday.name || holiday.localName,
+          holiday.date,
+          holiday.date,
+          'system',
+          'System',
+          1,
+          'public_holiday',
+          1,
+          1
+        );
+        insertedCount++;
+        console.log(`✅ Inserted holiday: ${holiday.localName} on ${holiday.date}`);
+      } catch (err) {
+        console.error(`Failed to insert holiday ${holiday.localName}:`, err);
+      }
+    });
+
+    // Also sync to Supabase
+    try {
+      const holidayInserts = holidays.map((holiday: any) => ({
+        id: `holiday-${holiday.date}-${holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().substring(0, 50)}`,
+        title: holiday.localName,
+        description: holiday.name || holiday.localName,
+        date: holiday.date,
+        endDate: holiday.date,
+        userId: 'system',
+        userName: 'System',
+        isShared: true,
+        type: 'public_holiday',
+        systemGenerated: true,
+        readOnly: true
+      }));
+      
+      const { error } = await supabase.from('events').upsert(holidayInserts);
+      if (error) {
+        console.error("Failed to sync holidays to Supabase:", error);
+      } else {
+        console.log(`✅ Synced ${holidayInserts.length} holidays to Supabase`);
+      }
+    } catch (supabaseError) {
+      console.error("Supabase sync error:", supabaseError);
+    }
+
+    console.log(`✅ Total ${insertedCount} holidays synced for ${year}`);
+    res.json({ 
+      message: `Synced ${insertedCount} holidays for ${year}`, 
+      count: insertedCount,
+      source: apiSuccess ? "API" : "Fallback"
+    });
+    
+  } catch (error) {
+    console.error("Holiday sync error:", error);
+    res.json({ message: "Could not fetch holidays", count: 0 });
+  }
+});
 
   // --- EVENT ROUTES ---
   app.get("/api/events", authenticate, (req: any, res) => {
