@@ -138,7 +138,7 @@ function AuthView({ onLogin }: { onLogin: (user: UserProfile) => void }) {
         className="bg-white dark:bg-stone-900 p-8 rounded-3xl shadow-xl max-w-md w-full border border-stone-200 dark:border-stone-800"
       >
         <div className="flex justify-center mb-6">
-          <div className="w-16 h-16 bg-brand rounded-2xl flex items-center justify-center text-white shadow-lg shadow-brand/20">
+          <div className="w-16 h-16 bg-accent rounded-2xl flex items-center justify-center text-white shadow-lg shadow-accent/20">
             <CalendarIcon size={32} />
           </div>
         </div>
@@ -413,7 +413,7 @@ function AdminView({ user, onBack }: { user: UserProfile, onBack: () => void }) 
       <header className="bg-white/80 dark:bg-stone-900/80 backdrop-blur-md border-b border-stone-200 dark:border-stone-800 px-6 py-4 sticky top-0 z-10">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button onClick={onBack} className="p-2 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-xl transition-colors text-stone-400 dark:text-stone-500">
+            <button onClick={onBack} className="p-2 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-xl transition-colors text-accent">
               <ChevronLeft size={20} />
             </button>
             <h1 className="text-lg font-bold tracking-tight dark:text-white">Admin Dashboard</h1>
@@ -862,7 +862,7 @@ function MyPlansListView({
       <header className="bg-white/80 dark:bg-stone-900/80 backdrop-blur-md border-b border-stone-200 dark:border-stone-800 px-6 py-4 sticky top-0 z-10">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button onClick={onBack} className="p-2 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-xl transition-colors text-stone-400 dark:text-stone-500">
+            <button onClick={onBack} className="p-2 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-xl transition-colors text-accent">
               <ChevronLeft size={20} />
             </button>
             <h1 className="text-lg font-bold tracking-tight dark:text-white">My Plans</h1>
@@ -1115,7 +1115,7 @@ function ProfileView({ user, onUpdate, onBack, darkMode, onToggleDarkMode }: { u
           <div className="flex items-center gap-4">
             <button 
               onClick={onBack}
-              className="p-2 hover:bg-white dark:hover:bg-stone-900 rounded-xl transition-colors text-stone-600 dark:text-stone-400 shadow-sm border border-transparent dark:border-stone-800"
+              className="p-2 bg-accent text-white rounded-xl transition-all hover:bg-accent-hover shadow-lg shadow-accent/20 border border-transparent"
             >
               <ChevronLeft size={24} />
             </button>
@@ -2059,7 +2059,7 @@ return matchesSearch && matchesPerson && matchesCategory;
       <header className="bg-white/80 dark:bg-stone-900/80 backdrop-blur-md border-b border-stone-200 dark:border-stone-800 px-4 md:px-6 py-3 md:py-4 sticky top-0 z-50 w-full isolate">
         <div className="max-w-5xl mx-auto flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 md:gap-3 shrink-0">
-            <div className="w-8 h-8 md:w-10 md:h-10 bg-brand rounded-lg md:rounded-xl flex items-center justify-center text-white shadow-lg shadow-brand/20">
+            <div className="w-8 h-8 md:w-10 md:h-10 bg-accent rounded-lg md:rounded-xl flex items-center justify-center text-white shadow-lg shadow-accent/20">
               <CalendarIcon size={18} className="md:w-5 md:h-5" />
             </div>
             <div className="hidden xs:block">
