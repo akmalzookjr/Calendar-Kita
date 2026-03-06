@@ -238,16 +238,16 @@ if (!adminUser) {
 // Ensure default settings
 db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)").run("holidayCountryCode", "MY");
 
-// --- SYNC LOGIC ---
+// --- SYNC LOGIC - Modified to NOT overwrite local data ---
 async function syncFromSupabase() {
-  console.log("--- STARTING SYNC FROM SUPABASE ---");
+  console.log("--- STARTING SYNC FROM SUPABASE (MERGING MODE) ---");
   try {
-    // Sync Users
+    // Sync Users - only insert if not exists
     const { data: users, error: usersError } = await supabase.from('users').select('*');
     if (usersError) throw usersError;
     if (users) {
       const insertUser = db.prepare(`
-        INSERT OR REPLACE INTO users (id, username, name, password, bio, profileImage, themeColor, backgroundStyle, isAdmin, role, createdAt, updatedAt)
+        INSERT OR IGNORE INTO users (id, username, name, password, bio, profileImage, themeColor, backgroundStyle, isAdmin, role, createdAt, updatedAt)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       db.transaction(() => {
@@ -259,41 +259,41 @@ async function syncFromSupabase() {
           );
         }
       })();
-      console.log(`Synced ${users.length} users`);
+      console.log(`Merged ${users.length} users from Supabase`);
     }
 
-    // Sync Groups
+    // Sync Groups - only insert if not exists
     const { data: groups, error: groupsError } = await supabase.from('groups').select('*');
     if (groupsError) throw groupsError;
     if (groups) {
-      const insertGroup = db.prepare("INSERT OR REPLACE INTO groups (id, name, createdAt) VALUES (?, ?, ?)");
+      const insertGroup = db.prepare("INSERT OR IGNORE INTO groups (id, name, createdAt) VALUES (?, ?, ?)");
       db.transaction(() => {
         for (const group of groups) {
           insertGroup.run(group.id, group.name, group.createdAt || new Date().toISOString());
         }
       })();
-      console.log(`Synced ${groups.length} groups`);
+      console.log(`Merged ${groups.length} groups from Supabase`);
     }
 
-    // Sync User Groups
+    // Sync User Groups - only insert if not exists
     const { data: userGroups, error: ugError } = await supabase.from('user_groups').select('*');
     if (ugError) throw ugError;
     if (userGroups) {
-      const insertUG = db.prepare("INSERT OR REPLACE INTO user_groups (userId, groupId) VALUES (?, ?)");
+      const insertUG = db.prepare("INSERT OR IGNORE INTO user_groups (userId, groupId) VALUES (?, ?)");
       db.transaction(() => {
         for (const ug of userGroups) {
           insertUG.run(ug.userId, ug.groupId);
         }
       })();
-      console.log(`Synced ${userGroups.length} user_groups`);
+      console.log(`Merged ${userGroups.length} user_groups from Supabase`);
     }
 
-    // Sync Events
+    // Sync Events - only insert if not exists
     const { data: events, error: eventsError } = await supabase.from('events').select('*');
     if (eventsError) throw eventsError;
     if (events) {
       const insertEvent = db.prepare(`
-        INSERT OR REPLACE INTO events (id, title, description, date, endDate, startTime, endTime, userId, userName, isShared, type, systemGenerated, readOnly, createdAt)
+        INSERT OR IGNORE INTO events (id, title, description, date, endDate, startTime, endTime, userId, userName, isShared, type, systemGenerated, readOnly, createdAt)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       db.transaction(() => {
@@ -306,28 +306,28 @@ async function syncFromSupabase() {
           );
         }
       })();
-      console.log(`Synced ${events.length} events`);
+      console.log(`Merged ${events.length} events from Supabase`);
     }
 
-    // Sync Event Groups
+    // Sync Event Groups - only insert if not exists
     const { data: eventGroups, error: egError } = await supabase.from('event_groups').select('*');
     if (egError) throw egError;
     if (eventGroups) {
-      const insertEG = db.prepare("INSERT OR REPLACE INTO event_groups (eventId, groupId) VALUES (?, ?)");
+      const insertEG = db.prepare("INSERT OR IGNORE INTO event_groups (eventId, groupId) VALUES (?, ?)");
       db.transaction(() => {
         for (const eg of eventGroups) {
           insertEG.run(eg.eventId, eg.groupId);
         }
       })();
-      console.log(`Synced ${eventGroups.length} event_groups`);
+      console.log(`Merged ${eventGroups.length} event_groups from Supabase`);
     }
 
-    // Sync Comments
+    // Sync Comments - only insert if not exists
     const { data: comments, error: commentsError } = await supabase.from('comments').select('*');
     if (commentsError) throw commentsError;
     if (comments) {
       const insertComment = db.prepare(`
-        INSERT OR REPLACE INTO comments (id, eventId, userId, userName, text, createdAt)
+        INSERT OR IGNORE INTO comments (id, eventId, userId, userName, text, createdAt)
         VALUES (?, ?, ?, ?, ?, ?)
       `);
       db.transaction(() => {
@@ -337,7 +337,7 @@ async function syncFromSupabase() {
           );
         }
       })();
-      console.log(`Synced ${comments.length} comments`);
+      console.log(`Merged ${comments.length} comments from Supabase`);
     }
 
     console.log("--- SYNC FROM SUPABASE COMPLETED ---");
@@ -351,7 +351,7 @@ async function startServer() {
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server });
 
-  // Sync from Supabase on startup
+  // Sync from Supabase on startup (now using INSERT OR IGNORE)
   await syncFromSupabase();
 
   const isProd = process.env.NODE_ENV === "production";
@@ -1060,11 +1060,11 @@ async function startServer() {
       transaction();
       console.log(`✅ Local event created: ${title} (${id})`);
 
-      // Supabase sync
+      // Supabase sync - ALWAYS try to sync, create user if needed
       try {
         console.log(`🔄 Attempting to sync event to Supabase...`);
         
-        // Check if user exists in Supabase
+        // First, check if the user exists in Supabase, if not create them
         const { data: userCheck, error: userError } = await supabase
           .from('users')
           .select('id')
@@ -1072,62 +1072,86 @@ async function startServer() {
           .single();
         
         if (userError) {
-          console.error(`❌ User ${userId} not found in Supabase:`, userError);
-          console.log(`⚠️ Event will not be synced to Supabase - user missing`);
-        } else {
-          console.log(`✅ User found in Supabase:`, userCheck);
+          console.log(`⚠️ User ${userId} not found in Supabase, creating user first...`);
           
-          // Insert event
-          const { data: eventData, error: eventError } = await supabase
-            .from('events')
-            .insert([{
-              id, 
-              title, 
-              description, 
-              date: startDateStr, 
-              endDate: endDateStr, 
-              startTime: startTime || null, 
-              endTime: endTime || null, 
-              userId, 
-              userName, 
-              isShared: !!isShared
-            }])
-            .select();
-          
-          if (eventError) {
-            console.error("❌ Supabase event insert error:", {
-              code: eventError.code,
-              message: eventError.message,
-              details: eventError.details,
-              hint: eventError.hint
-            });
-          } else {
-            console.log(`✅ Supabase event created:`, eventData);
+          // Get user data from local DB
+          const localUser = db.prepare("SELECT * FROM users WHERE id = ?").get(userId) as any;
+          if (localUser) {
+            const { error: createUserError } = await supabase
+              .from('users')
+              .insert([{
+                id: localUser.id,
+                username: localUser.username,
+                password: localUser.password,
+                name: localUser.name,
+                bio: localUser.bio,
+                profileImage: localUser.profileImage,
+                themeColor: localUser.themeColor,
+                backgroundStyle: localUser.backgroundStyle,
+                isAdmin: !!localUser.isAdmin,
+                role: localUser.role,
+                createdAt: localUser.createdAt,
+                updatedAt: localUser.updatedAt
+              }]);
             
-            // Insert event_groups if shared
-            if (isShared && groupIds.length > 0) {
-              const egInserts = groupIds.map((gId: string) => ({ 
-                eventId: id, 
-                groupId: gId 
-              }));
-              
-              console.log(`🔄 Inserting ${egInserts.length} event_group relations to Supabase...`);
-              
-              const { data: egData, error: egError } = await supabase
-                .from('event_groups')
-                .insert(egInserts)
-                .select();
-              
-              if (egError) {
-                console.error("❌ Supabase event_groups insert error:", {
-                  code: egError.code,
-                  message: egError.message,
-                  details: egError.details,
-                  hint: egError.hint
-                });
-              } else {
-                console.log(`✅ Supabase event_groups created:`, egData);
-              }
+            if (createUserError) {
+              console.error("❌ Failed to create user in Supabase:", createUserError);
+            } else {
+              console.log(`✅ User ${userId} created in Supabase`);
+            }
+          }
+        }
+        
+        // Now try to insert the event again
+        const { data: eventData, error: eventError } = await supabase
+          .from('events')
+          .insert([{
+            id, 
+            title, 
+            description, 
+            date: startDateStr, 
+            endDate: endDateStr, 
+            startTime: startTime || null, 
+            endTime: endTime || null, 
+            userId, 
+            userName, 
+            isShared: !!isShared
+          }])
+          .select();
+        
+        if (eventError) {
+          console.error("❌ Supabase event insert error:", {
+            code: eventError.code,
+            message: eventError.message,
+            details: eventError.details,
+            hint: eventError.hint
+          });
+        } else {
+          console.log(`✅ Supabase event created:`, eventData);
+          
+          // Insert event_groups if shared
+          if (isShared && groupIds.length > 0) {
+            const egInserts = groupIds.map((gId: string) => ({ 
+              eventId: id, 
+              groupId: gId 
+            }));
+            
+            console.log(`🔄 Inserting ${egInserts.length} event_group relations to Supabase...`);
+            
+            const { data: egData, error: egError } = await supabase
+              .from('event_groups')
+              .insert(egInserts)
+              .select();
+            
+            if (egError) {
+              console.error("❌ Supabase event_groups insert error:", {
+                code: egError.code,
+                message: egError.message,
+                details: egError.details,
+                hint: egError.hint
+              });
+            } else {
+              console.log(`✅ Supabase event_groups created:`, egData);
             }
           }
         }
@@ -1318,10 +1342,15 @@ async function startServer() {
         commentId, id, userId, userName, text
       );
       
-      // Supabase
-      await supabase.from('comments').insert([{
-        id: commentId, eventId: id, userId, userName, text
-      }]);
+      // Try Supabase
+      try {
+        await supabase.from('comments').insert([{
+          id: commentId, eventId: id, userId, userName, text
+        }]);
+        console.log(`✅ Supabase comment created`);
+      } catch (supabaseError) {
+        console.error("❌ Failed to sync comment to Supabase:", supabaseError);
+      }
       
       const newComment = db.prepare(`
         SELECT c.id, c.eventId, c.userId, c.userName, c.text, strftime('%Y-%m-%dT%H:%M:%SZ', c.createdAt) as createdAt, u.profileImage 
@@ -1358,7 +1387,11 @@ async function startServer() {
       db.prepare("DELETE FROM comments WHERE id = ?").run(commentId);
       
       // Supabase
-      await supabase.from('comments').delete().eq('id', commentId);
+      try {
+        await supabase.from('comments').delete().eq('id', commentId);
+      } catch (supabaseError) {
+        console.error("❌ Failed to delete comment from Supabase:", supabaseError);
+      }
       
       const countResult = db.prepare("SELECT COUNT(*) as count FROM comments WHERE eventId = ?").get(eventId) as any;
       const newCount = countResult ? countResult.count : 0;
