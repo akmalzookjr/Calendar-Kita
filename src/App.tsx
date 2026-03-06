@@ -2248,14 +2248,17 @@ useEffect(() => {
                           )} />
                         )}
                         {dayEvents.slice(0, 3).map((event, i) => (
-                          <div 
-                            key={i} 
-                            className={cn(
-                              "w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full shadow-sm transition-transform group-hover:scale-110",
-                              isSelected ? "bg-white" : event.type === 'public_holiday' ? "bg-red-500" : event.isShared ? "bg-brand" : "bg-stone-400 dark:bg-stone-600"
-                            )} 
-                          />
-                        ))}
+  <div 
+    key={i} 
+    className={cn(
+      "w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full shadow-sm transition-transform group-hover:scale-110",
+      isSelected ? "bg-white" : 
+        event.type === 'public_holiday' ? "bg-red-500" : 
+        event.type === 'observance' ? "bg-purple-500" : 
+        event.isShared ? "bg-brand" : "bg-stone-400 dark:bg-stone-600"
+    )} 
+  />
+))}
                         {dayEvents.length > 3 && (
                           <div className={cn("w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full flex items-center justify-center text-[5px] sm:text-[6px] font-bold", isSelected ? "bg-white/40 text-white" : "bg-stone-200 dark:bg-stone-700 text-stone-500 dark:text-stone-400")}>
                             +
@@ -2325,9 +2328,14 @@ useEffect(() => {
                     >
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex items-center gap-2">
+                          // In the event rendering section, update the className for the event type
                           {event.type === 'public_holiday' ? (
                             <div className="px-2 py-0.5 bg-red-600 text-white text-[9px] font-bold uppercase tracking-wider rounded-md">
                               Public Holiday
+                            </div>
+                          ) : event.type === 'observance' ? (
+                            <div className="px-2 py-0.5 bg-purple-600 text-white text-[9px] font-bold uppercase tracking-wider rounded-md">
+                              Special Day
                             </div>
                           ) : event.isShared ? (
                             <div className="p-1 bg-brand/20 text-brand rounded-md" title="Shared with family">
