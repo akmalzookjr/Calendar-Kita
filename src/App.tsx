@@ -2329,8 +2329,7 @@ return matchesSearch && matchesPerson && matchesCategory;
                     >
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex items-center gap-2">
-                          // In the event rendering section, update the className for the event type
-                          {event.type === 'public_holiday' ? (
+{event.type === 'public_holiday' ? (
                             <div className="px-2 py-0.5 bg-red-600 text-white text-[9px] font-bold uppercase tracking-wider rounded-md">
                               Public Holiday
                             </div>
