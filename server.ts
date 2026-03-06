@@ -583,104 +583,104 @@ async function startServer() {
   });
 
   // --- PROFILE ROUTES ---
-  app.get("/api/profile", authenticate, (req: any, res) => {
-    const userId = req.user.id;
-    const user = db.prepare(`
-      SELECT id, username, name, bio, profileImage, role, themeColor, backgroundStyle, createdAt, updatedAt 
+  app.put("/api/profile", authenticate, upload.single('profileImage'), async (req: any, res) => {
+  const userId = req.user.id;
+  const { name, bio, password, themeColor, backgroundStyle } = req.body;
+  const profileImage = req.file ? `/profile-images/${req.file.filename}` : undefined;
+
+  try {
+    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId) as any;
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (name !== undefined) {
+      updates.push("name = ?");
+      params.push(name);
+    }
+    if (bio !== undefined) {
+      updates.push("bio = ?");
+      params.push(bio);
+    }
+    if (themeColor !== undefined) {
+      updates.push("themeColor = ?");
+      params.push(themeColor);
+    }
+    if (backgroundStyle !== undefined) {
+      updates.push("backgroundStyle = ?");
+      params.push(backgroundStyle);
+    }
+    if (password) {
+      const hashedPassword = await bcrypt.hash(password, 10);
+      updates.push("password = ?");
+      params.push(hashedPassword);
+    }
+    if (profileImage) {
+      if (user.profileImage) {
+        const oldPath = path.join(__dirname, user.profileImage);
+        if (fs.existsSync(oldPath)) {
+          try { fs.unlinkSync(oldPath); } catch (e) {}
+        }
+      }
+      updates.push("profileImage = ?");
+      params.push(profileImage);
+    }
+
+    if (updates.length > 0) {
+      updates.push("updatedAt = CURRENT_TIMESTAMP");
+      const query = `UPDATE users SET ${updates.join(", ")} WHERE id = ?`;
+      params.push(userId);
+      db.prepare(query).run(...params);
+
+      // Update Supabase
+      const supabaseUpdates: any = {};
+      if (name !== undefined) supabaseUpdates.name = name;
+      if (bio !== undefined) supabaseUpdates.bio = bio;
+      if (themeColor !== undefined) supabaseUpdates.themeColor = themeColor;
+      if (backgroundStyle !== undefined) supabaseUpdates.backgroundStyle = backgroundStyle;
+      if (password) supabaseUpdates.password = await bcrypt.hash(password, 10);
+      if (profileImage) supabaseUpdates.profileImage = profileImage;
+      supabaseUpdates.updatedAt = new Date().toISOString();
+
+      console.log("Updating Supabase with:", supabaseUpdates);
+      
+      const { data, error } = await supabase
+        .from('users')
+        .update(supabaseUpdates)
+        .eq('id', userId);
+      
+      if (error) {
+        console.error("Supabase profile update error:", error);
+      } else {
+        console.log("Supabase update successful:", data);
+      }
+    }
+
+    const updatedUser = db.prepare(`
+      SELECT id, username, name, bio, profileImage, role, isAdmin, themeColor, backgroundStyle, 
+      strftime('%Y-%m-%dT%H:%M:%SZ', createdAt) as createdAt, 
+      strftime('%Y-%m-%dT%H:%M:%SZ', updatedAt) as updatedAt 
       FROM users WHERE id = ?
     `).get(userId) as any;
-    if (!user) return res.status(404).json({ error: "User not found" });
-    res.json(user);
-  });
-
-  app.put("/api/profile", authenticate, upload.single('profileImage'), async (req: any, res) => {
-    const userId = req.user.id;
-    const { name, bio, password, themeColor, backgroundStyle } = req.body;
-    const profileImage = req.file ? `/profile-images/${req.file.filename}` : undefined;
-
-    try {
-      const user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId) as any;
-      if (!user) return res.status(404).json({ error: "User not found" });
-
-      const updates: string[] = [];
-      const params: any[] = [];
-
-      if (name !== undefined) {
-        updates.push("name = ?");
-        params.push(name);
-      }
-      if (bio !== undefined) {
-        updates.push("bio = ?");
-        params.push(bio);
-      }
-      if (themeColor !== undefined) {
-        updates.push("themeColor = ?");
-        params.push(themeColor);
-      }
-      if (backgroundStyle !== undefined) {
-        updates.push("backgroundStyle = ?");
-        params.push(backgroundStyle);
-      }
-      if (password) {
-        const hashedPassword = await bcrypt.hash(password, 10);
-        updates.push("password = ?");
-        params.push(hashedPassword);
-      }
-      if (profileImage) {
-        if (user.profileImage) {
-          const oldPath = path.join(__dirname, user.profileImage);
-          if (fs.existsSync(oldPath)) {
-            try { fs.unlinkSync(oldPath); } catch (e) {}
-          }
-        }
-        updates.push("profileImage = ?");
-        params.push(profileImage);
-      }
-
-      if (updates.length > 0) {
-        updates.push("updatedAt = CURRENT_TIMESTAMP");
-        const query = `UPDATE users SET ${updates.join(", ")} WHERE id = ?`;
-        params.push(userId);
-        db.prepare(query).run(...params);
-
-        // Update Supabase
-        const supabaseUpdates: any = {};
-        if (name !== undefined) supabaseUpdates.name = name;
-        if (bio !== undefined) supabaseUpdates.bio = bio;
-        if (themeColor !== undefined) supabaseUpdates.themeColor = themeColor;
-        if (backgroundStyle !== undefined) supabaseUpdates.backgroundStyle = backgroundStyle;
-        if (password) supabaseUpdates.password = await bcrypt.hash(password, 10);
-        if (profileImage) supabaseUpdates.profileImage = profileImage;
-        supabaseUpdates.updatedAt = new Date().toISOString();
-
-        const { error: supabaseError } = await supabase.from('users').update(supabaseUpdates).eq('id', userId);
-        if (supabaseError) console.error("Supabase profile update error:", supabaseError);
-      }
-
-      const updatedUser = db.prepare(`
-        SELECT id, username, name, bio, profileImage, role, isAdmin, themeColor, backgroundStyle, 
-        strftime('%Y-%m-%dT%H:%M:%SZ', createdAt) as createdAt, 
-        strftime('%Y-%m-%dT%H:%M:%SZ', updatedAt) as updatedAt 
-        FROM users WHERE id = ?
-      `).get(userId) as any;
-      
-      if (updatedUser) {
-        updatedUser.isAdmin = !!updatedUser.isAdmin;
-        updatedUser.groups = db.prepare(`
-          SELECT g.id, g.name 
-          FROM groups g
-          JOIN user_groups ug ON g.id = ug.groupId
-          WHERE ug.userId = ?
-        `).all(userId);
-      }
-      
-      broadcast({ type: "USER_UPDATED", payload: { userId } });
-      res.json(updatedUser);
-    } catch (error) {
-      console.error("Profile update error:", error);
-      res.status(500).json({ error: "Failed to update profile" });
+    
+    if (updatedUser) {
+      updatedUser.isAdmin = !!updatedUser.isAdmin;
+      updatedUser.groups = db.prepare(`
+        SELECT g.id, g.name 
+        FROM groups g
+        JOIN user_groups ug ON g.id = ug.groupId
+        WHERE ug.userId = ?
+      `).all(userId);
     }
-  });
+    
+    broadcast({ type: "USER_UPDATED", payload: { userId } });
+    res.json(updatedUser);
+  } catch (error) {
+    console.error("Profile update error:", error);
+    res.status(500).json({ error: "Failed to update profile" });
+  }
+});
 
   // --- ADMIN ROUTES ---
   app.get("/api/admin/users", authenticate, adminOnly, (req, res) => {

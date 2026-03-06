@@ -1877,42 +1877,42 @@ return matchesSearch && matchesPerson && matchesCategory;
   }, [events]);
 
   const themeStyles = useMemo(() => {
-    const color = user?.themeColor || '#10b981';
-    
-    // Simple hex darken helper
-    const darken = (hex: string, percent: number) => {
-      const num = parseInt(hex.replace('#', ''), 16);
-      const amt = Math.round(2.55 * percent);
-      const R = (num >> 16) - amt;
-      const G = (num >> 8 & 0x00FF) - amt;
-      const B = (num & 0x0000FF) - amt;
-      return '#' + (0x1000000 + (R < 255 ? R < 0 ? 0 : R : 255) * 0x10000 + (G < 255 ? G < 0 ? 0 : G : 255) * 0x100 + (B < 255 ? B < 0 ? 0 : B : 255)).toString(16).slice(1);
-    };
+  const color = user?.themeColor || '#10b981';
+  
+  // Simple hex darken helper
+  const darken = (hex: string, percent: number) => {
+    const num = parseInt(hex.replace('#', ''), 16);
+    const amt = Math.round(2.55 * percent);
+    const R = (num >> 16) - amt;
+    const G = (num >> 8 & 0x00FF) - amt;
+    const B = (num & 0x0000FF) - amt;
+    return '#' + (0x1000000 + (R < 255 ? R < 0 ? 0 : R : 255) * 0x10000 + (G < 255 ? G < 0 ? 0 : G : 255) * 0x100 + (B < 255 ? B < 0 ? 0 : B : 255)).toString(16).slice(1);
+  };
 
-    return {
-      '--brand-color': color,
-      '--brand-color-hover': darken(color, 15),
-    } as React.CSSProperties;
-  }, [user?.themeColor]);
+  return {
+    '--brand-color': color,
+    '--brand-color-hover': darken(color, 15),
+  } as React.CSSProperties;
+}, [user?.themeColor]);
 
-  const backgroundClasses = useMemo(() => {
-    const style = user?.backgroundStyle || 'default';
-    if (darkMode) {
-      switch (style) {
-        case 'soft': return 'bg-stone-950 bg-gradient-to-br from-stone-950 via-stone-900 to-brand/10';
-        case 'glass': return 'bg-stone-950 bg-[radial-gradient(circle_at_top_right,var(--brand-color),transparent_40%),radial-gradient(circle_at_bottom_left,var(--brand-color),transparent_40%)] bg-opacity-20';
-        case 'vibrant': return 'bg-stone-950 bg-gradient-to-br from-brand/20 via-stone-950 to-brand/30';
-        default: return 'bg-stone-950';
-      }
-    } else {
-      switch (style) {
-        case 'soft': return 'bg-stone-50 bg-gradient-to-br from-stone-50 via-white to-brand/5';
-        case 'glass': return 'bg-stone-50 bg-[radial-gradient(circle_at_top_right,var(--brand-color),transparent_20%),radial-gradient(circle_at_bottom_left,var(--brand-color),transparent_20%)] bg-opacity-10';
-        case 'vibrant': return 'bg-stone-50 bg-gradient-to-br from-brand/10 via-stone-50 to-brand/20';
-        default: return 'bg-stone-50';
-      }
+const backgroundClasses = useMemo(() => {
+  const style = user?.backgroundStyle || 'default';
+  if (darkMode) {
+    switch (style) {
+      case 'soft': return 'bg-stone-950 bg-gradient-to-br from-stone-950 via-stone-900 to-brand/10';
+      case 'glass': return 'bg-stone-950 bg-[radial-gradient(circle_at_top_right,var(--brand-color),transparent_40%),radial-gradient(circle_at_bottom_left,var(--brand-color),transparent_40%)] bg-opacity-20';
+      case 'vibrant': return 'bg-stone-950 bg-gradient-to-br from-brand/20 via-stone-950 to-brand/30';
+      default: return 'bg-stone-950';
     }
-  }, [user?.backgroundStyle, darkMode, user?.themeColor]);
+  } else {
+    switch (style) {
+      case 'soft': return 'bg-stone-50 bg-gradient-to-br from-stone-50 via-white to-brand/5';
+      case 'glass': return 'bg-stone-50 bg-[radial-gradient(circle_at_top_right,var(--brand-color),transparent_20%),radial-gradient(circle_at_bottom_left,var(--brand-color),transparent_20%)] bg-opacity-10';
+      case 'vibrant': return 'bg-stone-50 bg-gradient-to-br from-brand/10 via-stone-50 to-brand/20';
+      default: return 'bg-stone-50';
+    }
+  }
+}, [user?.backgroundStyle, darkMode, user?.themeColor]);
 
   if (isLoading) {
     return (
