@@ -2088,10 +2088,7 @@ return matchesSearch && matchesPerson && matchesCategory;
   }
 
   return (
-    <div 
-      className={cn("min-h-screen font-sans transition-all duration-500", darkMode && "dark", !user?.backgroundStyle || user.backgroundStyle === 'default' ? (darkMode ? "bg-stone-950" : "bg-stone-50") : "")} 
-      style={{ ...themeStyles, ...backgroundStyles }}
-    >
+    <div className={cn("min-h-screen font-sans transition-all duration-500", darkMode && "dark", !user?.backgroundStyle || user.backgroundStyle === 'default' ? (darkMode ? "bg-stone-950" : "bg-stone-50") : "")} style={backgroundStyles}>
       {view === "admin" && user.isAdmin && (
         <AdminView user={user} onBack={() => setView("calendar")} />
       )}

@@ -256,17 +256,16 @@ db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)").run("hol
 async function syncFromSupabase() {
   console.log("--- STARTING SYNC FROM SUPABASE (MERGING MODE) ---");
   try {
-    // Sync Users - use REPLACE to ensure settings are updated from cloud
+    // Sync Users - only insert if not exists
     const { data: users, error: usersError } = await supabase.from('users').select('*');
     if (usersError) throw usersError;
     if (users) {
       const insertUser = db.prepare(`
-        INSERT OR REPLACE INTO users (id, username, name, password, bio, profileImage, themeColor, accentColor, backgroundStyle, isAdmin, role, createdAt, updatedAt)
+        INSERT OR IGNORE INTO users (id, username, name, password, bio, profileImage, themeColor, accentColor, backgroundStyle, isAdmin, role, createdAt, updatedAt)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       db.transaction(() => {
         for (const user of users) {
-          console.log(`   👤 Syncing user: ${user.username} (Theme: ${user.themeColor}, Accent: ${user.accentColor})`);
           insertUser.run(
             user.id, user.username, user.name || null, user.password, user.bio || null, 
             user.profileImage || null, user.themeColor || '#10b981', user.accentColor || '#10b981', user.backgroundStyle || 'default', 
@@ -274,7 +273,7 @@ async function syncFromSupabase() {
           );
         }
       })();
-      console.log(`Synced ${users.length} users from Supabase (updated local records)`);
+      console.log(`Merged ${users.length} users from Supabase`);
     }
 
     // Sync Groups - only insert if not exists
