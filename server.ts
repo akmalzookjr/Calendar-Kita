@@ -984,6 +984,42 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
       return res.json({ message: "No holidays found", count: 0 });
     }
 
+    // If using API data, filter to only include major Malaysian holidays
+    let filteredHolidays = holidays;
+    
+    if (apiSuccess) {
+      // List of major Malaysian public holidays (case-insensitive partial matching)
+      const majorHolidayKeywords = [
+        "new year",
+        "chinese new year",
+        "hari raya puasa",
+        "eid al-fitr",
+        "eid al fitr",
+        "hari raya haji",
+        "eid al-adha",
+        "eid al adha",
+        "labour day",
+        "workers' day",
+        "agong's birthday",
+        "yang di-pertuan agong",
+        "awal muharram",
+        "islamic new year",
+        "national day",
+        "merdeka",
+        "malaysia day",
+        "deepavali",
+        "diwali",
+        "christmas"
+      ];
+
+      filteredHolidays = holidays.filter((holiday: any) => {
+        const title = holiday.localName?.toLowerCase() || holiday.name?.toLowerCase() || "";
+        return majorHolidayKeywords.some(keyword => title.includes(keyword));
+      });
+
+      console.log(`Filtered to ${filteredHolidays.length} major holidays out of ${holidays.length} total`);
+    }
+
     // Insert holidays into local database
     const insertHoliday = db.prepare(`
       INSERT INTO events 
@@ -993,7 +1029,7 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
 
     let insertedCount = 0;
     
-    holidays.forEach((holiday: any) => {
+    filteredHolidays.forEach((holiday: any) => {
       const safeName = holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().substring(0, 50);
       const id = `holiday-${holiday.date}-${safeName}`;
       
@@ -1020,7 +1056,7 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
 
     // Also sync to Supabase
     try {
-      const holidayInserts = holidays.map((holiday: any) => ({
+      const holidayInserts = filteredHolidays.map((holiday: any) => ({
         id: `holiday-${holiday.date}-${holiday.localName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().substring(0, 50)}`,
         title: holiday.localName,
         description: holiday.name || holiday.localName,
