@@ -1,6 +1,15 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <script>
+  // Suppress extension-related errors
+  window.addEventListener('error', function(e) {
+    if (e.message.includes('extension') || e.filename.includes('extension://')) {
+      e.preventDefault();
+      return false;
+    }
+  });
+</script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>My Google AI Studio App</title>
