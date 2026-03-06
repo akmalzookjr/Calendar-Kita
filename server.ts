@@ -132,6 +132,18 @@ db.exec(`
     FOREIGN KEY(eventId) REFERENCES events(id) ON DELETE CASCADE,
     FOREIGN KEY(groupId) REFERENCES groups(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS notifications (
+    id TEXT PRIMARY KEY,
+    userId TEXT NOT NULL,
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    type TEXT NOT NULL,
+    relatedId TEXT,
+    isRead INTEGER DEFAULT 0,
+    createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
+  );
 `);
 
 // Run migrations
@@ -1359,6 +1371,43 @@ app.get("/api/events", authenticate, (req: any, res) => {
       
       broadcast({ type: "EVENT_CREATED", payload: newEvent });
       console.log(`✅ Event creation complete, returning success to client`);
+
+      // Create notifications for group members
+      if (isShared && groupIds.length > 0) {
+        const placeholders = groupIds.map(() => "?").join(",");
+        const members = db.prepare(`
+          SELECT DISTINCT userId FROM user_groups 
+          WHERE groupId IN (${placeholders}) AND userId != ?
+        `).all(...groupIds, userId) as any[];
+
+        for (const member of members) {
+          const notifId = crypto.randomUUID();
+          const title = "New Plan Created";
+          const message = `${userName} added a new plan: ${newEvent.title}`;
+          db.prepare(`
+            INSERT INTO notifications (id, userId, title, message, type, relatedId)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `).run(notifId, member.userId, title, message, 'event_created', id);
+          
+          broadcast({ 
+            type: "NOTIFICATION_CREATED", 
+            payload: { 
+              userId: member.userId,
+              notification: {
+                id: notifId,
+                userId: member.userId,
+                title,
+                message,
+                type: 'event_created',
+                relatedId: id,
+                isRead: false,
+                createdAt: new Date().toISOString()
+              }
+            } 
+          });
+        }
+      }
+
       res.status(201).json(newEvent);
       
     } catch (error) {
@@ -1548,6 +1597,72 @@ app.get("/api/events", authenticate, (req: any, res) => {
       const newCount = countResult ? countResult.count : 0;
 
       broadcast({ type: "COMMENT_ADDED", payload: { eventId: id, comment: newComment, newCount } });
+
+      // Create notifications for event owner and other commenters
+      const event = db.prepare("SELECT userId, title FROM events WHERE id = ?").get(id) as any;
+      if (event) {
+        // Notify event owner if not the commenter
+        if (event.userId !== userId) {
+          const notifId = crypto.randomUUID();
+          const title = "New Comment";
+          const message = `${userName} commented on your plan: ${event.title}`;
+          db.prepare(`
+            INSERT INTO notifications (id, userId, title, message, type, relatedId)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `).run(notifId, event.userId, title, message, 'comment_added', id);
+
+          broadcast({ 
+            type: "NOTIFICATION_CREATED", 
+            payload: { 
+              userId: event.userId,
+              notification: {
+                id: notifId,
+                userId: event.userId,
+                title,
+                message,
+                type: 'comment_added',
+                relatedId: id,
+                isRead: false,
+                createdAt: new Date().toISOString()
+              }
+            } 
+          });
+        }
+
+        // Notify other commenters
+        const otherCommenters = db.prepare(`
+          SELECT DISTINCT userId FROM comments 
+          WHERE eventId = ? AND userId != ? AND userId != ?
+        `).all(id, userId, event.userId) as any[];
+
+        for (const commenter of otherCommenters) {
+          const notifId = crypto.randomUUID();
+          const title = "New Comment";
+          const message = `${userName} also commented on: ${event.title}`;
+          db.prepare(`
+            INSERT INTO notifications (id, userId, title, message, type, relatedId)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `).run(notifId, commenter.userId, title, message, 'comment_added', id);
+
+          broadcast({ 
+            type: "NOTIFICATION_CREATED", 
+            payload: { 
+              userId: commenter.userId,
+              notification: {
+                id: notifId,
+                userId: commenter.userId,
+                title,
+                message,
+                type: 'comment_added',
+                relatedId: id,
+                isRead: false,
+                createdAt: new Date().toISOString()
+              }
+            } 
+          });
+        }
+      }
+
       res.status(201).json(newComment);
     } catch (error) {
       console.error("Failed to add comment:", error);
@@ -1586,6 +1701,48 @@ app.get("/api/events", authenticate, (req: any, res) => {
     } catch (error) {
       console.error("Delete comment error:", error);
       res.status(500).json({ error: "Failed to delete comment" });
+    }
+  });
+
+  // --- NOTIFICATION ROUTES ---
+  app.get("/api/notifications", authenticate, (req: any, res) => {
+    const userId = req.user.id;
+    try {
+      const notifications = db.prepare(`
+        SELECT id, userId, title, message, type, relatedId, isRead, 
+        strftime('%Y-%m-%dT%H:%M:%SZ', createdAt) as createdAt 
+        FROM notifications 
+        WHERE userId = ? 
+        ORDER BY createdAt DESC
+      `).all(userId) as any[];
+      
+      res.json(notifications.map(n => ({ ...n, isRead: !!n.isRead })));
+    } catch (error) {
+      console.error("Failed to fetch notifications:", error);
+      res.status(500).json({ error: "Failed to fetch notifications" });
+    }
+  });
+
+  app.put("/api/notifications/:id/read", authenticate, (req: any, res) => {
+    const { id } = req.params;
+    const userId = req.user.id;
+    try {
+      db.prepare("UPDATE notifications SET isRead = 1 WHERE id = ? AND userId = ?").run(id, userId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to mark notification as read:", error);
+      res.status(500).json({ error: "Failed to mark notification as read" });
+    }
+  });
+
+  app.delete("/api/notifications", authenticate, (req: any, res) => {
+    const userId = req.user.id;
+    try {
+      db.prepare("DELETE FROM notifications WHERE userId = ?").run(userId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to clear notifications:", error);
+      res.status(500).json({ error: "Failed to clear notifications" });
     }
   });
 

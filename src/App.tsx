@@ -47,7 +47,9 @@ import {
   ArrowLeft,
   Moon,
   Sun,
-  MessageSquare
+  MessageSquare,
+  Bell,
+  BellOff
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { clsx, type ClassValue } from "clsx";
@@ -826,6 +828,17 @@ interface UserProfile {
   backgroundStyle?: string;
 }
 
+interface Notification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  type: 'event_created' | 'comment_added' | 'system';
+  relatedId?: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
 function MyPlansListView({ 
   user, 
   events, 
@@ -1374,6 +1387,8 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
   useEffect(() => {
     const darken = (hex: string, percent: number) => {
@@ -1492,6 +1507,47 @@ useEffect(() => {
     } catch (error) {
       console.error("Failed to fetch events", error);
       setEvents([]);
+    }
+  };
+
+  const fetchNotifications = async () => {
+    if (!user) return;
+    try {
+      const res = await fetch("/api/notifications", { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setNotifications(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch notifications", error);
+    }
+  };
+
+  const markNotificationAsRead = async (id: string) => {
+    try {
+      const res = await fetch(`/api/notifications/${id}/read`, { 
+        method: "PUT",
+        credentials: "include" 
+      });
+      if (res.ok) {
+        setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+      }
+    } catch (error) {
+      console.error("Failed to mark notification as read", error);
+    }
+  };
+
+  const clearNotifications = async () => {
+    try {
+      const res = await fetch("/api/notifications", { 
+        method: "DELETE",
+        credentials: "include" 
+      });
+      if (res.ok) {
+        setNotifications([]);
+      }
+    } catch (error) {
+      console.error("Failed to clear notifications", error);
     }
   };
 
@@ -1727,6 +1783,10 @@ useEffect(() => {
         } else {
           setEvents((prev) => prev.filter((e) => e.userId !== data.payload.userId));
         }
+      } else if (data.type === "NOTIFICATION_CREATED") {
+        if (data.payload.userId === user.id) {
+          setNotifications(prev => [data.payload.notification, ...prev]);
+        }
       }
     };
 
@@ -1737,6 +1797,7 @@ useEffect(() => {
   // Fetch initial events
   useEffect(() => {
     fetchEvents();
+    fetchNotifications();
   }, [user]);
 
 // Holiday Sync Logic - replace your existing useEffect with this
@@ -2092,6 +2153,100 @@ return matchesSearch && matchesPerson && matchesCategory;
             </div>
 
             <div className="h-8 w-px bg-stone-100 dark:bg-stone-800 mx-1 hidden xs:block" />
+
+            <div className="relative">
+              <button 
+                onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                className="p-1.5 md:p-2 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-lg md:rounded-xl transition-all relative group"
+                title="Notifications"
+              >
+                <Bell size={18} className={cn("md:w-5 md:h-5 transition-colors", notifications.some(n => !n.isRead) ? "text-accent" : "text-stone-600 dark:text-stone-400")} />
+                {notifications.filter(n => !n.isRead).length > 0 && (
+                  <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-stone-900 animate-pulse" />
+                )}
+              </button>
+
+              <AnimatePresence>
+                {isNotificationsOpen && (
+                  <>
+                    <div className="fixed inset-0 z-[60]" onClick={() => setIsNotificationsOpen(false)} />
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      className="absolute right-0 mt-2 w-72 sm:w-80 bg-white dark:bg-stone-900 rounded-2xl shadow-2xl border border-stone-200 dark:border-stone-800 z-[70] overflow-hidden"
+                    >
+                      <div className="p-3 border-b border-stone-100 dark:border-stone-800 flex items-center justify-between bg-stone-50/50 dark:bg-stone-800/50">
+                        <h3 className="text-xs font-bold text-stone-800 dark:text-white uppercase tracking-wider">Notifications</h3>
+                        <div className="flex items-center gap-2">
+                          {notifications.length > 0 && (
+                            <button 
+                              onClick={clearNotifications}
+                              className="text-[9px] font-bold text-stone-400 hover:text-red-500 uppercase tracking-widest transition-colors"
+                            >
+                              Clear
+                            </button>
+                          )}
+                          <button onClick={() => setIsNotificationsOpen(false)} className="text-stone-400 hover:text-stone-600">
+                            <X size={14} />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="max-h-64 overflow-y-auto custom-scrollbar">
+                        {notifications.length === 0 ? (
+                          <div className="p-8 text-center">
+                            <BellOff size={20} className="mx-auto mb-2 text-stone-300 dark:text-stone-600" />
+                            <p className="text-[10px] text-stone-400 dark:text-stone-500 font-medium">No notifications</p>
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-stone-50 dark:divide-stone-800">
+                            {notifications.map(notification => (
+                              <div 
+                                key={notification.id} 
+                                onClick={() => {
+                                  markNotificationAsRead(notification.id);
+                                  if (notification.relatedId) {
+                                    const event = events.find(e => e.id === notification.relatedId);
+                                    if (event) {
+                                      handleOpenDetail(event);
+                                      setIsNotificationsOpen(false);
+                                    }
+                                  }
+                                }}
+                                className={cn(
+                                  "p-3 hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors cursor-pointer relative",
+                                  !notification.isRead && "bg-accent/5 dark:bg-accent/10"
+                                )}
+                              >
+                                <div className="flex gap-2">
+                                  <div className={cn(
+                                    "w-6 h-6 rounded-lg flex items-center justify-center shrink-0",
+                                    notification.type === 'event_created' ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600" :
+                                    notification.type === 'comment_added' ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600" :
+                                    "bg-stone-100 dark:bg-stone-800 text-stone-600"
+                                  )}>
+                                    {notification.type === 'event_created' ? <Plus size={12} /> :
+                                     notification.type === 'comment_added' ? <MessageSquare size={12} /> :
+                                     <Bell size={12} />}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <h4 className="text-[10px] font-bold text-stone-800 dark:text-white truncate">{notification.title}</h4>
+                                    <p className="text-[10px] text-stone-500 dark:text-stone-400 mt-0.5 line-clamp-2 leading-tight">{notification.message}</p>
+                                    <span className="text-[8px] text-stone-400 dark:text-stone-500 font-bold mt-1 block uppercase">
+                                      {format(parseISO(notification.createdAt), "MMM d, HH:mm")}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
 
             <button 
               onClick={() => setView("profile")}
