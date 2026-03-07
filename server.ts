@@ -254,60 +254,74 @@ db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)").run("hol
 
 // --- SYNC LOGIC - Modified to NOT overwrite local data ---
 async function syncFromSupabase() {
-  console.log("--- STARTING SYNC FROM SUPABASE (MERGING MODE) ---");
+  console.log("--- STARTING SYNC FROM SUPABASE (FULL SYNC MODE) ---");
   try {
-    // Sync Users - only insert if not exists
+    // Clear local tables first (in correct order due to foreign keys)
+    db.exec(`
+      DELETE FROM comments;
+      DELETE FROM event_groups;
+      DELETE FROM events;
+      DELETE FROM user_groups;
+      DELETE FROM groups;
+      DELETE FROM users;
+    `);
+
+    // Reset autoincrement counters if needed
+    db.exec(`VACUUM;`);
+
+    // Sync Users
     const { data: users, error: usersError } = await supabase.from('users').select('*');
     if (usersError) throw usersError;
-    if (users) {
+    if (users && users.length > 0) {
       const insertUser = db.prepare(`
-        INSERT OR IGNORE INTO users (id, username, name, password, bio, profileImage, themeColor, accentColor, backgroundStyle, isAdmin, role, createdAt, updatedAt)
+        INSERT INTO users (id, username, name, password, bio, profileImage, themeColor, accentColor, backgroundStyle, isAdmin, role, createdAt, updatedAt)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       db.transaction(() => {
         for (const user of users) {
           insertUser.run(
             user.id, user.username, user.name || null, user.password, user.bio || null, 
-            user.profileImage || null, user.themeColor || '#10b981', user.accentColor || '#10b981', user.backgroundStyle || 'default', 
-            user.isAdmin ? 1 : 0, user.role || 'User', user.createdAt || new Date().toISOString(), user.updatedAt || new Date().toISOString()
+            user.profileImage || null, user.themeColor || '#10b981', user.accentColor || '#10b981', 
+            user.backgroundStyle || 'default', user.isAdmin ? 1 : 0, user.role || 'User', 
+            user.createdAt || new Date().toISOString(), user.updatedAt || new Date().toISOString()
           );
         }
       })();
-      console.log(`Merged ${users.length} users from Supabase`);
+      console.log(`Synced ${users.length} users from Supabase`);
     }
 
-    // Sync Groups - only insert if not exists
+    // Sync Groups
     const { data: groups, error: groupsError } = await supabase.from('groups').select('*');
     if (groupsError) throw groupsError;
-    if (groups) {
-      const insertGroup = db.prepare("INSERT OR IGNORE INTO groups (id, name, createdAt) VALUES (?, ?, ?)");
+    if (groups && groups.length > 0) {
+      const insertGroup = db.prepare("INSERT INTO groups (id, name, createdAt) VALUES (?, ?, ?)");
       db.transaction(() => {
         for (const group of groups) {
           insertGroup.run(group.id, group.name, group.createdAt || new Date().toISOString());
         }
       })();
-      console.log(`Merged ${groups.length} groups from Supabase`);
+      console.log(`Synced ${groups.length} groups from Supabase`);
     }
 
-    // Sync User Groups - only insert if not exists
+    // Sync User Groups
     const { data: userGroups, error: ugError } = await supabase.from('user_groups').select('*');
     if (ugError) throw ugError;
-    if (userGroups) {
-      const insertUG = db.prepare("INSERT OR IGNORE INTO user_groups (userId, groupId) VALUES (?, ?)");
+    if (userGroups && userGroups.length > 0) {
+      const insertUG = db.prepare("INSERT INTO user_groups (userId, groupId) VALUES (?, ?)");
       db.transaction(() => {
         for (const ug of userGroups) {
           insertUG.run(ug.userId, ug.groupId);
         }
       })();
-      console.log(`Merged ${userGroups.length} user_groups from Supabase`);
+      console.log(`Synced ${userGroups.length} user_groups from Supabase`);
     }
 
-    // Sync Events - only insert if not exists
+    // Sync Events
     const { data: events, error: eventsError } = await supabase.from('events').select('*');
     if (eventsError) throw eventsError;
-    if (events) {
+    if (events && events.length > 0) {
       const insertEvent = db.prepare(`
-        INSERT OR IGNORE INTO events (id, title, description, date, endDate, startTime, endTime, userId, userName, isShared, type, systemGenerated, readOnly, createdAt)
+        INSERT INTO events (id, title, description, date, endDate, startTime, endTime, userId, userName, isShared, type, systemGenerated, readOnly, createdAt)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       db.transaction(() => {
@@ -320,43 +334,45 @@ async function syncFromSupabase() {
           );
         }
       })();
-      console.log(`Merged ${events.length} events from Supabase`);
+      console.log(`Synced ${events.length} events from Supabase`);
     }
 
-    // Sync Event Groups - only insert if not exists
+    // Sync Event Groups
     const { data: eventGroups, error: egError } = await supabase.from('event_groups').select('*');
     if (egError) throw egError;
-    if (eventGroups) {
-      const insertEG = db.prepare("INSERT OR IGNORE INTO event_groups (eventId, groupId) VALUES (?, ?)");
+    if (eventGroups && eventGroups.length > 0) {
+      const insertEG = db.prepare("INSERT INTO event_groups (eventId, groupId) VALUES (?, ?)");
       db.transaction(() => {
         for (const eg of eventGroups) {
           insertEG.run(eg.eventId, eg.groupId);
         }
       })();
-      console.log(`Merged ${eventGroups.length} event_groups from Supabase`);
+      console.log(`Synced ${eventGroups.length} event_groups from Supabase`);
     }
 
-    // Sync Comments - only insert if not exists
+    // Sync Comments
     const { data: comments, error: commentsError } = await supabase.from('comments').select('*');
     if (commentsError) throw commentsError;
-    if (comments) {
+    if (comments && comments.length > 0) {
       const insertComment = db.prepare(`
-        INSERT OR IGNORE INTO comments (id, eventId, userId, userName, text, createdAt)
+        INSERT INTO comments (id, eventId, userId, userName, text, createdAt)
         VALUES (?, ?, ?, ?, ?, ?)
       `);
       db.transaction(() => {
         for (const comment of comments) {
           insertComment.run(
-            comment.id, comment.eventId, comment.userId, comment.userName, comment.text, comment.createdAt || new Date().toISOString()
+            comment.id, comment.eventId, comment.userId, comment.userName, comment.text, 
+            comment.createdAt || new Date().toISOString()
           );
         }
       })();
-      console.log(`Merged ${comments.length} comments from Supabase`);
+      console.log(`Synced ${comments.length} comments from Supabase`);
     }
 
     console.log("--- SYNC FROM SUPABASE COMPLETED ---");
   } catch (error) {
     console.error("--- SYNC FROM SUPABASE FAILED ---", error);
+    // If sync fails, we might want to keep the existing data? Or handle error appropriately
   }
 }
 
