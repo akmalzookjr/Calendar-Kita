@@ -935,112 +935,80 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
     let apiSuccess = false;
     let source = "none";
     
-    // Try Calendarific API first (more reliable for Malaysia)
+    // Try Nager.Date API (free, no API key required)
     try {
-      console.log(`Trying Calendarific API for ${year}...`);
-      const CALENDARIFIC_API_KEY = process.env.CALENDARIFIC_API_KEY;
+      console.log(`Fetching holidays for ${year} from Nager.Date API...`);
+      const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/MY`);
       
-      if (CALENDARIFIC_API_KEY) {
-        const response = await fetch(
-          `https://calendarific.com/api/v2/holidays?` +
-          `api_key=${CALENDARIFIC_API_KEY}&` +
-          `country=MY&` +
-          `year=${year}`
-        );
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data.response && data.response.holidays) {
-            holidays = data.response.holidays.map((h: any) => ({
-              date: h.date.iso,
-              localName: h.name,
-              name: h.description || h.name,
-              type: h.type || []
-            }));
-            apiSuccess = true;
-            source = "Calendarific API";
-            console.log(`Found ${holidays.length} holidays from Calendarific API`);
-          }
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.length > 0) {
+          holidays = data;
+          apiSuccess = true;
+          source = "Nager.Date API";
+          console.log(`Found ${holidays.length} holidays from Nager.Date API`);
+        } else {
+          console.log("Nager.Date API returned empty data");
         }
+      } else {
+        console.log(`Nager.Date API returned status: ${response.status}`);
       }
     } catch (error) {
-      console.error("Calendarific API failed:", error);
+      console.error("Nager.Date API failed:", error);
     }
 
-    // If Calendarific fails, try Nager.Date API
-    if (!apiSuccess) {
-      try {
-        console.log(`Fetching holidays for ${year} from Nager.Date API...`);
-        const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/MY`);
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data && data.length > 0) {
-            holidays = data;
-            apiSuccess = true;
-            source = "Nager.Date API";
-            console.log(`Found ${holidays.length} holidays from Nager.Date API`);
-          }
-        }
-      } catch (error) {
-        console.error("Nager.Date API failed:", error);
-      }
-    }
-
-    // If both APIs fail, use comprehensive fallback data for 2025-2026
+    // If Nager.Date API fails, use comprehensive fallback data
     if (!apiSuccess) {
       console.log(`Using fallback holiday data for ${year}`);
       source = "Fallback Database";
       
-      // Comprehensive Malaysia holidays for 2025-2026
+      // Malaysia public holidays fallback data
       const holidayData: Record<string, any[]> = {
         "2026": [
-          { date: "2026-01-01", localName: "New Year's Day", name: "New Year's Day", type: "public_holiday" },
-          { date: "2026-01-14", localName: "Thaipusam", name: "Thaipusam", type: "public_holiday" },
-          { date: "2026-01-29", localName: "Federal Territory Day", name: "Federal Territory Day", type: "public_holiday" },
-          { date: "2026-02-14", localName: "Valentine's Day", name: "Valentine's Day", type: "observance" },
-          { date: "2026-02-17", localName: "Chinese New Year", name: "Chinese New Year", type: "public_holiday" },
-          { date: "2026-02-18", localName: "Chinese New Year Holiday", name: "Chinese New Year Holiday", type: "public_holiday" },
-          { date: "2026-03-07", localName: "Nuzul Al-Quran", name: "Nuzul Al-Quran", type: "observance" },
-          { date: "2026-03-20", localName: "Hari Raya Puasa", name: "Eid al-Fitr", type: "public_holiday" },
-          { date: "2026-03-21", localName: "Hari Raya Puasa Day 2", name: "Eid al-Fitr Day 2", type: "public_holiday" },
-          { date: "2026-03-22", localName: "Hari Raya Puasa Day 3", name: "Eid al-Fitr Day 3", type: "observance" },
-          { date: "2026-05-01", localName: "Labour Day", name: "Labour Day", type: "public_holiday" },
-          { date: "2026-05-07", localName: "Wesak Day", name: "Wesak Day", type: "public_holiday" },
-          { date: "2026-05-10", localName: "Mother's Day", name: "Mother's Day", type: "observance" },
-          { date: "2026-05-27", localName: "Hari Raya Haji", name: "Eid al-Adha", type: "public_holiday" },
-          { date: "2026-06-01", localName: "Agong's Birthday", name: "Yang di-Pertuan Agong's Birthday", type: "public_holiday" },
-          { date: "2026-06-06", localName: "Awal Muharram", name: "Islamic New Year", type: "public_holiday" },
-          { date: "2026-06-21", localName: "Father's Day", name: "Father's Day", type: "observance" },
-          { date: "2026-08-31", localName: "National Day", name: "Hari Merdeka", type: "public_holiday" },
-          { date: "2026-09-16", localName: "Malaysia Day", name: "Malaysia Day", type: "public_holiday" },
-          { date: "2026-09-28", localName: "Prophet Muhammad's Birthday", name: "Maulidur Rasul", type: "public_holiday" },
-          { date: "2026-10-29", localName: "Deepavali", name: "Deepavali", type: "public_holiday" },
-          { date: "2026-12-25", localName: "Christmas Day", name: "Christmas Day", type: "public_holiday" },
-          { date: "2026-12-26", localName: "Boxing Day", name: "Boxing Day", type: "observance" }
+          { date: "2026-01-01", name: "New Year's Day", localName: "New Year's Day" },
+          { date: "2026-01-14", name: "Thaipusam", localName: "Thaipusam" },
+          { date: "2026-01-29", name: "Federal Territory Day", localName: "Federal Territory Day" },
+          { date: "2026-02-14", name: "Valentine's Day", localName: "Valentine's Day" },
+          { date: "2026-02-17", name: "Chinese New Year", localName: "Chinese New Year" },
+          { date: "2026-02-18", name: "Chinese New Year Holiday", localName: "Chinese New Year Holiday" },
+          { date: "2026-03-07", name: "Nuzul Al-Quran", localName: "Nuzul Al-Quran" },
+          { date: "2026-03-20", name: "Hari Raya Puasa", localName: "Eid al-Fitr" },
+          { date: "2026-03-21", name: "Hari Raya Puasa Day 2", localName: "Eid al-Fitr Day 2" },
+          { date: "2026-05-01", name: "Labour Day", localName: "Labour Day" },
+          { date: "2026-05-07", name: "Wesak Day", localName: "Wesak Day" },
+          { date: "2026-05-10", name: "Mother's Day", localName: "Mother's Day" },
+          { date: "2026-05-27", name: "Hari Raya Haji", localName: "Eid al-Adha" },
+          { date: "2026-06-01", name: "Agong's Birthday", localName: "Yang di-Pertuan Agong's Birthday" },
+          { date: "2026-06-06", name: "Awal Muharram", localName: "Islamic New Year" },
+          { date: "2026-06-21", name: "Father's Day", localName: "Father's Day" },
+          { date: "2026-08-31", name: "National Day", localName: "Hari Merdeka" },
+          { date: "2026-09-16", name: "Malaysia Day", localName: "Malaysia Day" },
+          { date: "2026-09-28", name: "Prophet Muhammad's Birthday", localName: "Maulidur Rasul" },
+          { date: "2026-10-29", name: "Deepavali", localName: "Deepavali" },
+          { date: "2026-12-25", name: "Christmas Day", localName: "Christmas Day" }
         ],
         "2025": [
-          { date: "2025-01-01", localName: "New Year's Day", name: "New Year's Day", type: "public_holiday" },
-          { date: "2025-01-14", localName: "Thaipusam", name: "Thaipusam", type: "public_holiday" },
-          { date: "2025-01-29", localName: "Chinese New Year", name: "Chinese New Year", type: "public_holiday" },
-          { date: "2025-01-30", localName: "Chinese New Year Holiday", name: "Chinese New Year Holiday", type: "public_holiday" },
-          { date: "2025-02-01", localName: "Federal Territory Day", name: "Federal Territory Day", type: "public_holiday" },
-          { date: "2025-02-14", localName: "Valentine's Day", name: "Valentine's Day", type: "observance" },
-          { date: "2025-03-18", localName: "Nuzul Al-Quran", name: "Nuzul Al-Quran", type: "observance" },
-          { date: "2025-03-31", localName: "Hari Raya Puasa", name: "Eid al-Fitr", type: "public_holiday" },
-          { date: "2025-04-01", localName: "Hari Raya Puasa Day 2", name: "Eid al-Fitr Day 2", type: "public_holiday" },
-          { date: "2025-05-01", localName: "Labour Day", name: "Labour Day", type: "public_holiday" },
-          { date: "2025-05-12", localName: "Wesak Day", name: "Wesak Day", type: "public_holiday" },
-          { date: "2025-05-11", localName: "Mother's Day", name: "Mother's Day", type: "observance" },
-          { date: "2025-06-02", localName: "Agong's Birthday", name: "Yang di-Pertuan Agong's Birthday", type: "public_holiday" },
-          { date: "2025-06-07", localName: "Hari Raya Haji", name: "Eid al-Adha", type: "public_holiday" },
-          { date: "2025-06-15", localName: "Father's Day", name: "Father's Day", type: "observance" },
-          { date: "2025-06-27", localName: "Awal Muharram", name: "Islamic New Year", type: "public_holiday" },
-          { date: "2025-08-31", localName: "National Day", name: "Hari Merdeka", type: "public_holiday" },
-          { date: "2025-09-05", localName: "Prophet Muhammad's Birthday", name: "Maulidur Rasul", type: "public_holiday" },
-          { date: "2025-09-16", localName: "Malaysia Day", name: "Malaysia Day", type: "public_holiday" },
-          { date: "2025-10-20", localName: "Deepavali", name: "Deepavali", type: "public_holiday" },
-          { date: "2025-12-25", localName: "Christmas Day", name: "Christmas Day", type: "public_holiday" }
+          { date: "2025-01-01", name: "New Year's Day", localName: "New Year's Day" },
+          { date: "2025-01-14", name: "Thaipusam", localName: "Thaipusam" },
+          { date: "2025-01-29", name: "Chinese New Year", localName: "Chinese New Year" },
+          { date: "2025-01-30", name: "Chinese New Year Holiday", localName: "Chinese New Year Holiday" },
+          { date: "2025-02-01", name: "Federal Territory Day", localName: "Federal Territory Day" },
+          { date: "2025-02-14", name: "Valentine's Day", localName: "Valentine's Day" },
+          { date: "2025-03-18", name: "Nuzul Al-Quran", localName: "Nuzul Al-Quran" },
+          { date: "2025-03-31", name: "Hari Raya Puasa", localName: "Eid al-Fitr" },
+          { date: "2025-04-01", name: "Hari Raya Puasa Day 2", localName: "Eid al-Fitr Day 2" },
+          { date: "2025-05-01", name: "Labour Day", localName: "Labour Day" },
+          { date: "2025-05-12", name: "Wesak Day", localName: "Wesak Day" },
+          { date: "2025-05-11", name: "Mother's Day", localName: "Mother's Day" },
+          { date: "2025-06-02", name: "Agong's Birthday", localName: "Yang di-Pertuan Agong's Birthday" },
+          { date: "2025-06-07", name: "Hari Raya Haji", localName: "Eid al-Adha" },
+          { date: "2025-06-15", name: "Father's Day", localName: "Father's Day" },
+          { date: "2025-06-27", name: "Awal Muharram", localName: "Islamic New Year" },
+          { date: "2025-08-31", name: "National Day", localName: "Hari Merdeka" },
+          { date: "2025-09-05", name: "Prophet Muhammad's Birthday", localName: "Maulidur Rasul" },
+          { date: "2025-09-16", name: "Malaysia Day", localName: "Malaysia Day" },
+          { date: "2025-10-20", name: "Deepavali", localName: "Deepavali" },
+          { date: "2025-12-25", name: "Christmas Day", localName: "Christmas Day" }
         ]
       };
       
@@ -1049,10 +1017,10 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
       // If year is not 2025 or 2026, create some default holidays
       if (holidays.length === 0) {
         holidays = [
-          { date: `${year}-01-01`, localName: "New Year's Day", name: "New Year's Day", type: "public_holiday" },
-          { date: `${year}-05-01`, localName: "Labour Day", name: "Labour Day", type: "public_holiday" },
-          { date: `${year}-08-31`, localName: "National Day", name: "Hari Merdeka", type: "public_holiday" },
-          { date: `${year}-12-25`, localName: "Christmas Day", name: "Christmas Day", type: "public_holiday" }
+          { date: `${year}-01-01`, name: "New Year's Day", localName: "New Year's Day" },
+          { date: `${year}-05-01`, name: "Labour Day", localName: "Labour Day" },
+          { date: `${year}-08-31`, name: "National Day", localName: "Hari Merdeka" },
+          { date: `${year}-12-25`, name: "Christmas Day", localName: "Christmas Day" }
         ];
       }
     }
@@ -1061,25 +1029,25 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
       return res.json({ message: "No holidays found", count: 0 });
     }
 
-    // Process holidays to ensure correct typing
-    let processedHolidays = holidays.map((holiday: any) => {
-      // Ensure type is set correctly
-      let type = holiday.type || 'observance';
+    // Process holidays - determine if public holiday or observance
+    const processedHolidays = holidays.map((holiday: any) => {
+      const title = holiday.localName?.toLowerCase() || holiday.name?.toLowerCase() || "";
       
-      // If type is an array, check if it contains public holiday indicators
-      if (Array.isArray(type)) {
-        if (type.includes("National holiday") || 
-            type.includes("Public Holiday") ||
-            type.includes("Federal Public Holiday")) {
-          type = 'public_holiday';
-        } else {
-          type = 'observance';
-        }
-      }
-      
+      // Public holiday keywords
+      const publicHolidayKeywords = [
+        "new year", "chinese new year", "hari raya", "eid", "labour day", 
+        "workers' day", "agong", "king's birthday", "awal muharram", 
+        "islamic new year", "national day", "merdeka", "malaysia day",
+        "deepavali", "diwali", "christmas", "wesak", "thaipusam",
+        "prophet muhammad", "maulidur rasul", "federal territory"
+      ];
+
+      const isPublic = publicHolidayKeywords.some(keyword => title.includes(keyword));
+      const type = isPublic ? 'public_holiday' : 'observance';
+
       return {
         ...holiday,
-        type: type === 'public_holiday' ? 'public_holiday' : 'observance'
+        type
       };
     });
 
@@ -1102,7 +1070,7 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
         // Insert into SQLite
         insertHoliday.run(
           id,
-          holiday.localName,
+          holiday.localName || holiday.name,
           holiday.name || holiday.localName,
           holiday.date,
           holiday.date,
@@ -1114,12 +1082,12 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
           1
         );
         insertedCount++;
-        console.log(`✅ Inserted ${eventType}: ${holiday.localName} on ${holiday.date}`);
+        console.log(`✅ Inserted ${eventType}: ${holiday.localName || holiday.name} on ${holiday.date}`);
         
         // Prepare for Supabase sync
         holidayInserts.push({
           id,
-          title: holiday.localName,
+          title: holiday.localName || holiday.name,
           description: holiday.name || holiday.localName,
           date: holiday.date,
           endDate: holiday.date,
@@ -1131,7 +1099,7 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
           readOnly: true
         });
       } catch (err) {
-        console.error(`Failed to insert holiday ${holiday.localName}:`, err);
+        console.error(`Failed to insert holiday ${holiday.localName || holiday.name}:`, err);
       }
     }
 
