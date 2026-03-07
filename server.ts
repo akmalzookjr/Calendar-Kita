@@ -535,42 +535,50 @@ async function startServer() {
   });
 
   app.post("/api/auth/login", async (req, res) => {
-    const { username, password } = req.body;
-    try {
-      // Try local DB first
-      const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as any;
-      
-      if (!user || !(await bcrypt.compare(password, user.password))) {
-        return res.status(401).json({ error: "Invalid credentials" });
-      }
-      
-      const token = jwt.sign({ id: user.id, username: user.username, isAdmin: !!user.isAdmin }, JWT_SECRET);
-      res.cookie("token", token, { 
-        httpOnly: true, 
-        sameSite: 'none', 
-        secure: true,
-        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-      });
-      
-      const groups = db.prepare(`
-        SELECT g.id, g.name 
-        FROM groups g
-        JOIN user_groups ug ON g.id = ug.groupId
-        WHERE ug.userId = ?
-      `).all(user.id);
-
-      const { password: _, ...userWithoutPassword } = user;
-
-      res.json({ 
-        ...userWithoutPassword,
-        isAdmin: !!user.isAdmin,
-        groups: groups
-      });
-    } catch (error) {
-      console.error("Login error:", error);
-      res.status(500).json({ error: "Login failed" });
+  const { username, password } = req.body;
+  try {
+    // Use Supabase directly, ignore SQLite for auth
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('username', username);
+    
+    if (error) throw error;
+    
+    const user = users?.[0];
+    
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(401).json({ error: "Invalid credentials" });
     }
-  });
+    
+    const token = jwt.sign({ id: user.id, username: user.username, isAdmin: !!user.isAdmin }, JWT_SECRET);
+    res.cookie("token", token, { 
+      httpOnly: true, 
+      sameSite: 'none', 
+      secure: true,
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+    
+    // Get groups from Supabase
+    const { data: userGroups } = await supabase
+      .from('user_groups')
+      .select('groups(id, name)')
+      .eq('userId', user.id);
+
+    const groups = userGroups?.map(ug => ug.groups) || [];
+
+    const { password: _, ...userWithoutPassword } = user;
+
+    res.json({ 
+      ...userWithoutPassword,
+      isAdmin: !!user.isAdmin,
+      groups: groups
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).json({ error: "Login failed" });
+  }
+});
 
   app.post("/api/auth/logout", (req, res) => {
     res.clearCookie("token", { 
