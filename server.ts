@@ -945,7 +945,7 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
       
       if (response.ok) {
         const data = await response.json();
-        console.log(`📥 Raw API response:`, JSON.stringify(data).substring(0, 200) + "...");
+        console.log(`📥 Raw API response received with ${data.length} items`);
         
         if (data && Array.isArray(data) && data.length > 0) {
           holidays = data;
@@ -1025,8 +1025,6 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
         let dateStr = item.date;
         let holidayName = item.holiday_name;
         
-        console.log(`Processing: ${dateStr} - ${holidayName}`);
-        
         // Convert "Jan 01" format to "2026-01-01" if needed
         if (typeof dateStr === 'string' && dateStr.match(/^[A-Z][a-z]{2} \d{1,2}$/)) {
           const monthMap: {[key: string]: string} = {
@@ -1037,7 +1035,7 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
           const [month, day] = dateStr.split(' ');
           const paddedDay = day.padStart(2, '0');
           dateStr = `${year}-${monthMap[month]}-${paddedDay}`;
-          console.log(`  Converted date to: ${dateStr}`);
+          console.log(`  Converted date: ${item.date} -> ${dateStr}`);
         }
         
         // Validate date format
@@ -1046,23 +1044,27 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
           continue;
         }
 
-        // Determine if public holiday
+        // Determine if public holiday - ALL Malaysian holidays from the API should be public holidays
+        // But we'll keep the logic for flexibility
         const title = holidayName.toLowerCase();
         const publicHolidayKeywords = [
           "new year", "thaipusam", "chinese new year", "hari raya", "eid", "labour day", 
           "agong", "king's birthday", "awal muharram", "wesak", "national day", 
           "merdeka", "malaysia day", "deepavali", "christmas", "prophet muhammad", 
-          "maulidur rasul", "nuzul", "sultan"
+          "maulidur rasul", "nuzul", "sultan", "holiday", "birthday"
         ];
         
-        const isPublic = publicHolidayKeywords.some(keyword => title.includes(keyword)) || 
-                        title.includes("holiday") || 
-                        title.includes("birthday");
-        const type = isPublic ? 'public_holiday' : 'observance';
+        // Most Malaysian holidays are public holidays
+        const isPublic = true; // Force all as public holidays for Malaysia
+        
+        // Use EXACTLY 'public_holiday' (with underscore) to match the query
+        const type = 'public_holiday';
 
         // Create unique ID
         const safeName = holidayName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase().substring(0, 50);
         const id = `holiday-${dateStr}-${safeName}`;
+        
+        console.log(`  📝 Inserting: ${holidayName} on ${dateStr} as ${type}`);
         
         // Insert into SQLite
         insertHoliday.run(
@@ -1074,13 +1076,13 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
           'system',
           'System',
           1, // isShared
-          type,
+          type, // Now using exactly 'public_holiday'
           1, // systemGenerated
           1  // readOnly
         );
         
         insertedCount++;
-        console.log(`  ✅ Inserted: ${holidayName} on ${dateStr} (${type})`);
+        console.log(`  ✅ Inserted: ${holidayName} on ${dateStr}`);
         
         // Prepare for Supabase
         holidayInserts.push({
@@ -1092,7 +1094,7 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
           userId: 'system',
           userName: 'System',
           isShared: true,
-          type: type,
+          type: type, // Using exactly 'public_holiday'
           systemGenerated: true,
           readOnly: true
         });
@@ -1101,6 +1103,8 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
         console.error(`❌ Failed to insert holiday:`, err, item);
       }
     }
+
+    console.log(`📊 SQLite inserted: ${insertedCount} holidays`);
 
     // Sync to Supabase
     if (holidayInserts.length > 0) {
@@ -1139,6 +1143,8 @@ app.get("/api/holidays/sync/:year", authenticate, async (req: any, res) => {
     }
 
     console.log(`🎉 Successfully synced ${insertedCount} holidays for ${year} from ${source}`);
+    
+    // Return success response
     res.json({ 
       message: `Synced ${insertedCount} holidays for ${year}`,
       count: insertedCount,
